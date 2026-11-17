@@ -15,7 +15,8 @@ const CDN_MODEL_PATH =
 const LOCAL_WASM_PATH = '/wasm';
 const CDN_WASM_PATH = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm';
 
-// Landmark index for the index fingertip
+// Landmark indices
+export const THUMB_TIP_INDEX = 4;
 export const INDEX_FINGER_TIP_INDEX = 8;
 
 // Landmark connections for the hand skeleton (pairs of landmark indices)
@@ -130,6 +131,7 @@ export function detectHandInVideo(videoElement, timestampMs) {
     ) {
       const landmarks = results.landmarks[0];
       const indexFingertip = landmarks[INDEX_FINGER_TIP_INDEX];
+      const thumbTip = landmarks[THUMB_TIP_INDEX];
       
       let handednessLabel = 'Hand';
       let handednessScore = null;
@@ -142,6 +144,7 @@ export function detectHandInVideo(videoElement, timestampMs) {
         detected: true,
         landmarks,
         indexFingertip,
+        thumbTip,
         handedness: handednessLabel,
         confidence: handednessScore,
         rawResults: results,
@@ -152,6 +155,7 @@ export function detectHandInVideo(videoElement, timestampMs) {
       detected: false,
       landmarks: null,
       indexFingertip: null,
+      thumbTip: null,
       handedness: null,
       confidence: null,
     };

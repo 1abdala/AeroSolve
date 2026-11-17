@@ -7,7 +7,7 @@ import './App.css';
 const CURRENT_YEAR = new Date().getFullYear();
 
 /**
- * Main App Component for AeroSolve (Milestone 2)
+ * Main App Component for AeroSolve (Milestone 3: Air-Writing Interaction)
  */
 export default function App() {
   return (
@@ -21,33 +21,33 @@ export default function App() {
             <div className="overview-header">
               <h2>System Integration Status</h2>
               <p className="overview-description">
-                Milestone 2 integrates Google MediaPipe Hand Landmarker for real-time 21-landmark hand detection and index fingertip tracking directly over the live webcam feed.
+                Milestone 3 implements full air-writing interaction: write in the air using your index finger, with a hysteresis-stabilized pinch gesture controlling stroke creation and persistent ink rendering.
               </p>
             </div>
             <BackendStatus />
           </div>
 
-          {/* Central Camera & Hand Tracking Workspace */}
+          {/* Central Camera, Hand Tracking & Air-Writing Workspace */}
           <CameraPreview />
 
           {/* Architecture & Milestone Scope Notice */}
           <div className="foundation-info-grid">
             <div className="info-card">
-              <div className="info-icon">✋</div>
+              <div className="info-icon">✍️</div>
               <div className="info-body">
-                <h3>MediaPipe Hand Landmarker</h3>
+                <h3>Pinch-to-Write Gesture</h3>
                 <p>
-                  Runs in <code>VIDEO</code> mode with single-hand detection. Identifies all 21 3D landmarks and tracks index fingertip (Landmark #8) with sub-pixel precision.
+                  Calculates normalized Euclidean distance between thumb tip (#4) and index tip (#8). Dual-threshold hysteresis prevents stroke flicker and false starts.
                 </p>
               </div>
             </div>
 
             <div className="info-card">
-              <div className="info-icon">⚡</div>
+              <div className="info-icon">🎨</div>
               <div className="info-body">
-                <h3>High-Performance Rendering</h3>
+                <h3>Dual-Canvas Architecture</h3>
                 <p>
-                  Zero-overhead 60 FPS canvas overlay decoupled from React re-renders. Synchronizes coordinate mirroring with the user-facing selfie webcam feed.
+                  Layered architecture with an ephemeral 60 FPS tracking overlay and a dedicated persistent ink layer that preserves completed strokes during tracking pauses and resizing.
                 </p>
               </div>
             </div>
@@ -55,9 +55,9 @@ export default function App() {
             <div className="info-card">
               <div className="info-icon">🔒</div>
               <div className="info-body">
-                <h3>Client-Side Privacy</h3>
+                <h3>Local & Responsive</h3>
                 <p>
-                  Inference runs entirely in the browser via WebAssembly (WASM) and WebGL. No video streams, landmarks, or biometric telemetry leave your device.
+                  Zero network latency with client-side MediaPipe inference. Full mirror alignment ensures index fingertip writing matches screen ink effortlessly.
                 </p>
               </div>
             </div>
@@ -68,7 +68,7 @@ export default function App() {
       <footer className="app-footer">
         <div className="footer-container">
           <p className="footer-copy">
-            <strong>AeroSolve</strong> &copy; {CURRENT_YEAR} — Milestone 2 (Hand Tracking with MediaPipe).
+            <strong>AeroSolve</strong> &copy; {CURRENT_YEAR} — Milestone 3 (Air-Writing Interaction).
           </p>
           <div className="footer-links">
             <span className="footer-tag">Python 3.15 + FastAPI</span>

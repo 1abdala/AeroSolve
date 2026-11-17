@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useHandTracking } from '../hooks/useHandTracking';
 
 /**
- * CameraPreview Component (Milestone 2)
+ * CameraPreview Component (Milestone 3: Air-Writing Interaction)
  * Manages webcam acquisition via navigator.mediaDevices.getUserMedia(),
  * renders live video feed, provides start/stop controls, and integrates
- * real-time MediaPipe hand and index fingertip tracking with canvas overlay.
+ * real-time MediaPipe hand tracking, pinch gesture detection, and persistent
+ * air-writing canvas drawing.
  */
 export default function CameraPreview() {
   // Camera state: 'idle' | 'starting' | 'active' | 'error'
@@ -19,14 +20,17 @@ export default function CameraPreview() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
-  // Milestone 2: Hand Tracking Hook
+  // Milestone 3: Hand Tracking & Air-Writing Hook
   const {
     canvasRef,
+    drawingCanvasRef,
     modelState,
     modelError,
-    handDetected,
+    drawingState,
+    strokeCount,
     trackingInfo,
     loadModel,
+    clearWriting,
   } = useHandTracking({
     videoRef,
     cameraActive: cameraState === 'active',
@@ -55,6 +59,7 @@ export default function CameraPreview() {
 
   /**
    * Stop camera feed and reset state to idle.
+   * Note: Completed air-writing strokes are preserved!
    */
   const stopCamera = useCallback(() => {
     stopTracks();
@@ -75,7 +80,6 @@ export default function CameraPreview() {
     setErrorType('');
     setCameraState('starting');
 
-    // 1. Check if mediaDevices API is supported by the browser
     if (
       !navigator.mediaDevices ||
       typeof navigator.mediaDevices.getUserMedia !== 'function'
@@ -88,7 +92,6 @@ export default function CameraPreview() {
       return;
     }
 
-    // 2. Request user media constraints
     const constraints = {
       video: {
         width: { ideal: 1280 },
@@ -189,7 +192,7 @@ export default function CameraPreview() {
   };
 
   /**
-   * Cleanup on unmount: stop all active tracks to prevent background recording.
+   * Cleanup on unmount: stop all active tracks.
    */
   useEffect(() => {
     return () => {
@@ -198,12 +201,12 @@ export default function CameraPreview() {
   }, [stopTracks]);
 
   return (
-    <section className="camera-section" aria-label="Webcam Preview and Hand Tracking Controls">
+    <section className="camera-section" aria-label="Webcam Preview and Air-Writing Controls">
       <div className="camera-viewport-card">
         {/* Top Status & Controls Toolbar */}
         <div className="camera-toolbar">
           <div className="camera-info-group">
-            <span className="camera-title">Live Camera Stream</span>
+            <span className="camera-title">Live Air-Writing Workspace</span>
             {cameraState === 'active' && deviceLabel && (
               <span className="device-tag" title={deviceLabel}>
                 {deviceLabel}
@@ -245,38 +248,47 @@ export default function CameraPreview() {
                 Loading Model...
               </span>
             )}
-            {modelState === 'ready' && cameraState === 'active' && (
-              <>
-                {handDetected ? (
-                  <span className="status-badge badge-active" title="Hand actively detected in view">
-                    <span className="status-indicator-dot dot-live-pulse"></span>
-                    Hand Detected {trackingInfo.handedness ? `(${trackingInfo.handedness})` : ''}
-                  </span>
-                ) : (
-                  <span className="status-badge badge-idle" title="No hand visible in current frame">
-                    <span className="status-indicator-dot dot-idle"></span>
-                    No Hand Detected
-                  </span>
-                )}
-              </>
-            )}
             {modelState === 'error' && (
               <span className="status-badge badge-error" title={modelError}>
                 <span className="status-indicator-dot dot-error"></span>
                 Model Error
               </span>
             )}
+
+            {/* Milestone 3: Air-Writing Drawing Status Badge */}
+            {modelState === 'ready' && cameraState === 'active' && (
+              <>
+                {drawingState === 'no_hand' && (
+                  <span className="status-badge badge-idle" title="No hand detected in camera frame">
+                    <span className="status-indicator-dot dot-idle"></span>
+                    Hand Not Detected
+                  </span>
+                )}
+                {drawingState === 'ready' && (
+                  <span className="status-badge badge-ready" title="Hand detected! Pinch index finger and thumb to write.">
+                    <span className="status-indicator-dot dot-ready"></span>
+                    Ready (Pinch to Write)
+                  </span>
+                )}
+                {drawingState === 'drawing' && (
+                  <span className="status-badge badge-drawing" title="Pinch active! Air-writing in progress.">
+                    <span className="status-indicator-dot dot-drawing-pulse"></span>
+                    ● Drawing
+                  </span>
+                )}
+              </>
+            )}
           </div>
         </div>
 
-        {/* Video & Tracking Canvas Viewport */}
+        {/* Video, Drawing Canvas & Tracking Canvas Viewport */}
         <div
           className="video-container"
           style={{
             aspectRatio: videoResolution ? `${videoResolution.width} / ${videoResolution.height}` : '16 / 9',
           }}
         >
-          {/* Native HTML5 Video Element */}
+          {/* Layer 1: Native HTML5 Video Element */}
           <video
             ref={videoRef}
             playsInline
@@ -286,7 +298,14 @@ export default function CameraPreview() {
             aria-label="Webcam feed"
           />
 
-          {/* Milestone 2: Hand Tracking Overlay Canvas */}
+          {/* Layer 2: Persistent Air-Writing Ink Canvas (Milestone 3) */}
+          <canvas
+            ref={drawingCanvasRef}
+            className="air-writing-canvas visible"
+            aria-label="Air-writing drawing layer"
+          />
+
+          {/* Layer 3: Ephemeral Tracking Reticle & Skeleton Overlay Canvas */}
           <canvas
             ref={canvasRef}
             className={`tracking-overlay-canvas ${cameraState === 'active' ? 'visible' : 'hidden'}`}
@@ -312,7 +331,7 @@ export default function CameraPreview() {
               </div>
               <h3 className="placeholder-heading">Camera is Inactive</h3>
               <p className="placeholder-subtext">
-                Click <strong>"Start Camera"</strong> below to grant webcam permission and view live hand tracking.
+                Click <strong>"Start Camera"</strong> below to grant webcam permission, track your hand, and begin air-writing.
               </p>
               <div className="privacy-callout">
                 <svg
@@ -328,7 +347,7 @@ export default function CameraPreview() {
                 >
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                 </svg>
-                <span>MediaPipe runs locally in your browser. No video or hand data is stored or uploaded.</span>
+                <span>Air-writing and MediaPipe run locally in your browser. No video is recorded or uploaded.</span>
               </div>
             </div>
           )}
@@ -375,9 +394,10 @@ export default function CameraPreview() {
           {/* Live Stream Overlay Metadata */}
           {cameraState === 'active' && videoResolution && (
             <div className="live-overlay-tag">
-              <span>● REC LOCAL</span>
+              <span>● AIR-WRITING ACTIVE</span>
               <span>{videoResolution.width} × {videoResolution.height}</span>
               {trackingInfo.fps > 0 && <span>• {trackingInfo.fps} FPS</span>}
+              {strokeCount > 0 && <span className="stroke-pill">{strokeCount} {strokeCount === 1 ? 'stroke' : 'strokes'}</span>}
             </div>
           )}
         </div>
@@ -427,6 +447,31 @@ export default function CameraPreview() {
               Stop Camera
             </button>
 
+            {/* Milestone 3: Clear Writing Button */}
+            <button
+              onClick={clearWriting}
+              disabled={strokeCount === 0}
+              className="btn btn-clear-writing"
+              id="btn-clear-writing"
+              title="Clear all air-writing strokes from the canvas"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+              Clear Writing {strokeCount > 0 ? `(${strokeCount})` : ''}
+            </button>
+
             {/* Toggle Skeleton Overlay */}
             <button
               onClick={() => setShowSkeleton((prev) => !prev)}
@@ -456,41 +501,48 @@ export default function CameraPreview() {
                 Retry Model Load
               </button>
             )}
-            {cameraState === 'active' && handDetected && (
-              <span className="hint-text active-hint">
-                Tracking index fingertip (Landmark #8). Move your hand to test tracking.
+            {cameraState === 'active' && drawingState === 'drawing' && (
+              <span className="hint-text drawing-hint">
+                Pinch held — drawing stroke with index finger. Release pinch to finish stroke.
               </span>
             )}
-            {cameraState === 'active' && !handDetected && (
+            {cameraState === 'active' && drawingState === 'ready' && (
+              <span className="hint-text ready-hint">
+                Pinch your index finger and thumb together to write.
+              </span>
+            )}
+            {cameraState === 'active' && drawingState === 'no_hand' && (
               <span className="hint-text">
-                Position your hand in front of the camera to begin tracking.
+                Bring your hand into view to activate air-writing.
               </span>
             )}
             {cameraState === 'idle' && (
               <span className="hint-text">
-                Webcam is offline. Click Start Camera to begin.
+                Webcam is offline. Click Start Camera to begin air-writing.
               </span>
             )}
           </div>
         </div>
 
-        {/* Milestone 2: Fingertip Telemetry & Landmark Inspector Panel */}
+        {/* Milestone 3: Fingertip & Air-Writing Telemetry Bar */}
         {cameraState === 'active' && (
           <div className="tracking-telemetry-bar">
             <div className="telemetry-item">
-              <span className="telemetry-label">Hand State:</span>
-              <span className={`telemetry-value ${handDetected ? 'val-active' : 'val-muted'}`}>
-                {handDetected ? `Detected (${trackingInfo.handedness || 'Hand'})` : 'No Hand Detected'}
+              <span className="telemetry-label">Status:</span>
+              <span className={`telemetry-value ${
+                drawingState === 'drawing' ? 'val-drawing' : drawingState === 'ready' ? 'val-ready' : 'val-muted'
+              }`}>
+                {drawingState === 'drawing' ? 'Drawing Active' : drawingState === 'ready' ? 'Ready (Open)' : 'No Hand'}
               </span>
             </div>
 
             <div className="telemetry-divider">|</div>
 
             <div className="telemetry-item">
-              <span className="telemetry-label">Index Tip (Norm):</span>
-              <span className="telemetry-value">
-                {trackingInfo.indexTip
-                  ? `x: ${trackingInfo.indexTip.normX.toFixed(3)}, y: ${trackingInfo.indexTip.normY.toFixed(3)}, z: ${trackingInfo.indexTip.normZ.toFixed(3)}`
+              <span className="telemetry-label">Pinch Distance:</span>
+              <span className={`telemetry-value ${trackingInfo.isPinching ? 'val-drawing' : ''}`}>
+                {trackingInfo.pinchDistance !== null
+                  ? `${trackingInfo.pinchDistance.toFixed(3)} ${trackingInfo.isPinching ? '(Pinching)' : '(Open)'}`
                   : '—'}
               </span>
             </div>
@@ -498,7 +550,16 @@ export default function CameraPreview() {
             <div className="telemetry-divider">|</div>
 
             <div className="telemetry-item">
-              <span className="telemetry-label">Index Tip (Pixels):</span>
+              <span className="telemetry-label">Strokes:</span>
+              <span className="telemetry-value val-engine">
+                {strokeCount} completed
+              </span>
+            </div>
+
+            <div className="telemetry-divider">|</div>
+
+            <div className="telemetry-item">
+              <span className="telemetry-label">Tip (Pixel):</span>
               <span className="telemetry-value">
                 {trackingInfo.indexTip
                   ? `${trackingInfo.indexTip.pixelX}px, ${trackingInfo.indexTip.pixelY}px`
@@ -509,9 +570,9 @@ export default function CameraPreview() {
             <div className="telemetry-divider">|</div>
 
             <div className="telemetry-item">
-              <span className="telemetry-label">Tracking Engine:</span>
+              <span className="telemetry-label">Rate:</span>
               <span className="telemetry-value val-engine">
-                MediaPipe Video ({trackingInfo.fps || 0} FPS)
+                {trackingInfo.fps || 0} FPS
               </span>
             </div>
           </div>
