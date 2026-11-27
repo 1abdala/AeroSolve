@@ -13,7 +13,7 @@ AeroSolve is an AI-powered air-writing mathematics learning application. This re
   - One Euro Filter (Temporal adaptive jitter filtering for 21 hand landmarks)
   - Modular Stroke Processing Pipeline (Sanitization, Binomial Smoothing, Arc-Length Resampling, Aspect-Ratio Normalization)
   - HTML5 Video & Dual HTML5 Canvas Architecture (Persistent Ink Layer + Real-Time Overlay Layer + M4 Normalized Inspector)
-  - Vitest (277 automated unit and algorithm tests across 15 test suites)
+  - Vitest (312 automated unit, algorithm, and integration tests across 16 test suites)
   - Oxlint (High-speed JavaScript/JSX static analysis)
 - **Backend**:
   - Python 3.10+ (tested on Python 3.15)
@@ -304,6 +304,7 @@ AeroSolve follows a staged milestone development roadmap:
    - **Milestone 6.1 — Mathematical Expression Parser**: Standalone deterministic recursive-descent lexer and parser converting recognized mathematical tokens/strings into a structured Abstract Syntax Tree (AST), enforcing operator precedence (`*`, `/` over `+`, `-`), left-associativity, parentheses grouping, and input-level multi-digit integer grouping without numerical evaluation. `[COMPLETED]`
    - **Milestone 6.2 — AST Evaluation & Step-by-Step Reduction Engine**: Standalone deterministic AST evaluator traversing parsed expressions to compute mathematical results while recording structured intermediate reduction steps, enforcing strict zero-division guards, explicit non-finite handling, and preserving raw numerical precision while cleaning IEEE-754 representation noise for display. `[COMPLETED]`
    - **Milestone 6.3 — Solution Verification Engine**: Standalone deterministic mathematical verification engine featuring structural AST subexpression reduction matching (`matchSubtreeReduction`), multi-step reduction sequence validation, value-invariance checking, alternative reduction order and multi-reduction support, formal numerical tolerance comparison, and conservative heuristic misconception diagnostics. `[COMPLETED]`
+   - **Milestone 6.4 — Solver & Verifier UI Integration**: Interactive Air-Writing Expression Assembly Workspace, append-to-end token ribbon, operator toolstrip, live reactive syntax readiness validation (`EMPTY`, `READY`, `INCOMPLETE`, `SYNTAX_ERROR`), step-by-step reduction drawer with subexpression rewrites, strict Solver vs. Practice Mode state isolation, independent Candidate Answer Buffer with multi-digit air-writing accumulation, sign/decimal modifiers, M6.3 deterministic verification integration, and strict anti-spoiler feedback policy. `[COMPLETED]`
 7. **Milestone 7 (M7) — AI Tutoring & Contextual Feedback**: LLM educational feedback, student error diagnosis, and interactive guidance. `[FUTURE]`
 
 ---
@@ -312,5 +313,5 @@ AeroSolve follows a staged milestone development roadmap:
 
 Per project roadmap specifications:
 - **Milestone 5 (Symbol Recognition)** is closed for the current prototype phase.
-- **Milestone 6 (Mathematical Solving & Verification)** will introduce expression parsing and algebraic solving without modifying M1–M4 pipelines or retrained M5 models.
-- **Milestone 7 (AI Tutoring)** is strictly reserved for future conversational LLM guidance.
+- **Milestone 6 (Mathematical Solving, Verification & UI Integration)** is completed and verified across sub-milestones 6.1, 6.2, 6.3, and 6.4 without modifying M1–M4 pipelines or M5 models.
+- **Milestone 7 (AI Tutoring)** is strictly reserved for future conversational LLM guidance and requires explicit planning approval before implementation.

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useHandTracking } from '../hooks/useHandTracking';
 import { predictSymbol } from '../services/symbolRecognizer';
 import { saveDatasetSample, syncDatasetCorpus } from '../services/api';
+import ExpressionWorkspace from './ExpressionWorkspace';
 import symbolModelV1 from '../assets/symbol_model_v1.json';
 import symbolModelV2 from '../assets/symbol_model_v2.json';
 import defaultCorpusSeed from '../assets/real_val_seed.json';
@@ -302,6 +303,67 @@ export default function CameraPreview() {
   }, []);
 
   const recognitionResult = debouncedRecognition;
+
+  // Milestone 6.4 (Phases A & C): Expression Assembly & Practice Mode State
+  const [expressionTokens, setExpressionTokens] = useState([]);
+  const [workspaceMode, setWorkspaceMode] = useState('solver');
+  const [answerDigits, setAnswerDigits] = useState([]);
+  const [answerSign, setAnswerSign] = useState('+');
+
+  const handleAppendToken = useCallback((value, type = 'digit') => {
+    if (!value) return;
+    const displayMap = { '*': '×', '/': '÷' };
+    const newToken = {
+      id: `tok_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      value: String(value),
+      display: displayMap[value] || String(value),
+    };
+    setExpressionTokens((prev) => [...prev, newToken]);
+    // Clear canvas when a recognized digit is committed to expression
+    if (type === 'digit') {
+      clearWriting();
+    }
+  }, [clearWriting]);
+
+  const handleRemoveToken = useCallback((index) => {
+    setExpressionTokens((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleBackspaceToken = useCallback(() => {
+    setExpressionTokens((prev) => prev.slice(0, -1));
+  }, []);
+
+  const handleClearExpression = useCallback(() => {
+    setExpressionTokens([]);
+  }, []);
+
+  // Milestone 6.4 (Phase C): Candidate Answer Buffer Handlers
+  const handleAppendAnswerDigit = useCallback((digit) => {
+    if (digit === null || digit === undefined) return;
+    setAnswerDigits((prev) => [...prev, String(digit)]);
+    clearWriting();
+  }, [clearWriting]);
+
+  const handleBackspaceAnswer = useCallback(() => {
+    setAnswerDigits((prev) => prev.slice(0, -1));
+  }, []);
+
+  const handleClearAnswer = useCallback(() => {
+    setAnswerDigits([]);
+  }, []);
+
+  const handleToggleAnswerSign = useCallback(() => {
+    setAnswerSign((prev) => (prev === '+' ? '-' : '+'));
+  }, []);
+
+  const handleAddAnswerDecimal = useCallback(() => {
+    setAnswerDigits((prev) => {
+      if (prev.includes('.')) return prev;
+      if (prev.length === 0) return ['0', '.'];
+      return [...prev, '.'];
+    });
+  }, []);
 
   // Milestone 5: Corpus statistics per digit (differentiating genuine webcam samples from seeds and session counts)
   const corpusStats = useMemo(() => {
@@ -1389,6 +1451,40 @@ export default function CameraPreview() {
               )}
             </div>
 
+            {/* Milestone 6.4 (Phases A & C): Expression & Practice Answer Append Bar */}
+            {recognitionResult && recognitionResult.status !== 'REJECTED' && recognitionResult.topPrediction && (
+              <div className="recognition-expression-commit-bar">
+                {workspaceMode === 'solver' ? (
+                  <button
+                    type="button"
+                    className="btn-append-to-expression"
+                    onClick={() => handleAppendToken(recognitionResult.topPrediction, 'digit')}
+                    title={`Append "${recognitionResult.topPrediction}" to mathematical expression and clear canvas`}
+                    id="btn-append-recognized-digit"
+                  >
+                    <span className="btn-append-icon">➕</span>
+                    <span>Add <strong>"{recognitionResult.topPrediction}"</strong> to Expression</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-append-to-expression btn-append-to-answer"
+                    onClick={() => handleAppendAnswerDigit(recognitionResult.topPrediction)}
+                    title={`Append "${recognitionResult.topPrediction}" to practice candidate answer and clear canvas`}
+                    id="btn-append-recognized-answer-digit"
+                  >
+                    <span className="btn-append-icon">🎯</span>
+                    <span>Add <strong>"{recognitionResult.topPrediction}"</strong> to Answer</span>
+                  </button>
+                )}
+                <span className="commit-hint">
+                  {workspaceMode === 'solver'
+                    ? 'Appends digit to expression ribbon and resets canvas for next symbol'
+                    : 'Appends digit to practice candidate answer buffer and resets canvas'}
+                </span>
+              </div>
+            )}
+
             {/* Phase 6: Human Validation Trial Logger */}
             <div className="validation-logger-bar">
               <div className="val-logger-header">
@@ -1458,6 +1554,24 @@ export default function CameraPreview() {
             </div>
           </div>
         )}
+
+        {/* Milestone 6.4 (Phases A, B, & C): Mathematical Workspace */}
+        <ExpressionWorkspace
+          tokens={expressionTokens}
+          onAppendToken={handleAppendToken}
+          onRemoveToken={handleRemoveToken}
+          onBackspace={handleBackspaceToken}
+          onClearAll={handleClearExpression}
+          mode={workspaceMode}
+          onModeChange={setWorkspaceMode}
+          answerDigits={answerDigits}
+          answerSign={answerSign}
+          onAppendAnswerDigit={handleAppendAnswerDigit}
+          onBackspaceAnswer={handleBackspaceAnswer}
+          onClearAnswer={handleClearAnswer}
+          onToggleSign={handleToggleAnswerSign}
+          onAddDecimal={handleAddAnswerDecimal}
+        />
 
         {/* Phase 6: Human Validation Summary Panel */}
         {showValidationSummary && validationStats && (
