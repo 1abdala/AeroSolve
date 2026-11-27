@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   INDEX_FINGER_TIP_INDEX,
   HAND_CONNECTIONS,
+  sanitizeInferenceTimestamp,
 } from '../services/handTracking';
 
 describe('MediaPipe Hand Landmark Constants and Topology', () => {
@@ -63,5 +64,27 @@ describe('Coordinate Transformation and Video Mirroring', () => {
     const mappedRight = mapCoordinates(rawLandmarkRight, canvasWidth, canvasHeight);
     expect(mappedRight.x).toBeCloseTo(256, 1);
     expect(mappedRight.y).toBeCloseTo(432, 1);
+  });
+});
+
+describe('Timestamp Sanitization for MediaPipe Tasks Vision', () => {
+  it('guarantees strictly increasing integer timestamps', () => {
+    // Normal sequential progression
+    expect(sanitizeInferenceTimestamp(100, 133.4)).toBe(133);
+    expect(sanitizeInferenceTimestamp(133, 166.7)).toBe(167);
+
+    // Stale or duplicate timestamp (must increment by at least 1)
+    expect(sanitizeInferenceTimestamp(167, 167)).toBe(168);
+    expect(sanitizeInferenceTimestamp(167, 166)).toBe(168);
+    expect(sanitizeInferenceTimestamp(167, 100)).toBe(168);
+
+    // Initial state handling
+    expect(sanitizeInferenceTimestamp(-1, 0)).toBe(0);
+    expect(sanitizeInferenceTimestamp(-1, 15.2)).toBe(15);
+  });
+
+  it('handles invalid inputs gracefully without throwing', () => {
+    expect(sanitizeInferenceTimestamp(100, NaN)).toBe(101);
+    expect(sanitizeInferenceTimestamp(null, 50)).toBe(50);
   });
 });

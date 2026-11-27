@@ -37,6 +37,20 @@ export const HAND_CONNECTIONS = [
 
 let handLandmarkerInstance = null;
 let initPromise = null;
+let lastInferenceTimestamp = -1;
+
+/**
+ * Ensure monotonically increasing integer timestamps required by MediaPipe Tasks Vision.
+ * Handles stale, out-of-order, or non-integer timestamps safely.
+ * @param {number} lastTimestamp
+ * @param {number} newTimestamp
+ * @returns {number}
+ */
+export function sanitizeInferenceTimestamp(lastTimestamp, newTimestamp) {
+  const last = typeof lastTimestamp === 'number' && !isNaN(lastTimestamp) ? lastTimestamp : -1;
+  const target = typeof newTimestamp === 'number' && !isNaN(newTimestamp) ? Math.round(newTimestamp) : 0;
+  return Math.max(last + 1, target);
+}
 
 /**
  * Initialize MediaPipe FilesetResolver and HandLandmarker with fallback mechanisms.
@@ -70,10 +84,10 @@ export async function getHandLandmarker() {
           delegate,
         },
         runningMode: 'VIDEO',
-        numHands: 1, // Single-hand detection for Milestone 2
+        numHands: 1, // Single-hand detection
         minHandDetectionConfidence: 0.5,
-        minHandPresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
+        minHandPresenceConfidence: 0.38,
+        minTrackingConfidence: 0.4,
       });
     };
 
@@ -120,8 +134,12 @@ export function detectHandInVideo(videoElement, timestampMs) {
     return null;
   }
 
+  // Ensure monotonically increasing timestamp as strictly required by MediaPipe Tasks Vision
+  const safeTimestamp = sanitizeInferenceTimestamp(lastInferenceTimestamp, timestampMs);
+  lastInferenceTimestamp = safeTimestamp;
+
   try {
-    const results = handLandmarkerInstance.detectForVideo(videoElement, timestampMs);
+    const results = handLandmarkerInstance.detectForVideo(videoElement, safeTimestamp);
 
     if (
       results &&
@@ -176,5 +194,6 @@ export function disposeHandLandmarker() {
       console.warn('Error closing HandLandmarker instance:', e);
     }
     handLandmarkerInstance = null;
+    lastInferenceTimestamp = -1;
   }
 }

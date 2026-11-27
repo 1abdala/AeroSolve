@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.routes.health import router as health_router
+from app.routes.dataset import router as dataset_router
 
 # Retrieve allowed CORS origins from environment, with sane defaults for local development
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
@@ -25,6 +26,7 @@ app.add_middleware(
 
 # Include route handlers
 app.include_router(health_router)
+app.include_router(dataset_router)
 
 
 @app.get("/")

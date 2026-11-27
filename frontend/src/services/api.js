@@ -51,4 +51,65 @@ export async function checkBackendHealth() {
   }
 }
 
+/**
+ * Save a single genuine sample to the backend dataset storage.
+ * @param {object} sample
+ * @returns {Promise<{success: boolean, data?: object, error?: string}>}
+ */
+export async function saveDatasetSample(sample) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/dataset/sample`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sample),
+    });
+    if (!res.ok) {
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Bulk synchronize a list of samples from localStorage with backend dataset storage.
+ * @param {Array<object>} samples
+ * @returns {Promise<{success: boolean, data?: object, error?: string}>}
+ */
+export async function syncDatasetCorpus(samples) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/dataset/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ samples }),
+    });
+    if (!res.ok) {
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Fetch all collected genuine samples and statistics from backend.
+ * @returns {Promise<{success: boolean, data?: object, error?: string}>}
+ */
+export async function fetchDatasetStats() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/dataset/samples`);
+    if (!res.ok) {
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 export { API_BASE_URL };

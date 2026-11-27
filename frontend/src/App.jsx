@@ -21,43 +21,43 @@ export default function App() {
             <div className="overview-header">
               <h2>System Integration Status</h2>
               <p className="overview-description">
-                Milestone 3 implements full air-writing interaction: write in the air using your index finger, with a hysteresis-stabilized pinch gesture controlling stroke creation and persistent ink rendering.
+                Milestone 5 implements local symbol recognition for digits 0–9: offline in-browser geometric feature classification with Top-3 candidate predictions, confidence scoring, sub-millisecond inference, and interactive dataset collection.
               </p>
             </div>
             <BackendStatus />
           </div>
 
-          {/* Central Camera, Hand Tracking & Air-Writing Workspace */}
+          {/* Central Camera, Hand Tracking, Air-Writing & Stroke Processing Workspace */}
           <CameraPreview />
 
           {/* Architecture & Milestone Scope Notice */}
           <div className="foundation-info-grid">
             <div className="info-card">
-              <div className="info-icon">✍️</div>
+              <div className="info-icon">⚡</div>
               <div className="info-body">
-                <h3>Pinch-to-Write Gesture</h3>
+                <h3>Modular Pipeline</h3>
                 <p>
-                  Calculates normalized Euclidean distance between thumb tip (#4) and index tip (#8). Dual-threshold hysteresis prevents stroke flicker and false starts.
+                  Pure functional pipeline with deep-cloning immutability guarantees: Sanitization → Binomial Smoothing → Arc-Length Resampling → Aspect-Ratio Preserving Normalization.
                 </p>
               </div>
             </div>
 
             <div className="info-card">
-              <div className="info-icon">🎨</div>
+              <div className="info-icon">📐</div>
               <div className="info-body">
-                <h3>Dual-Canvas Architecture</h3>
+                <h3>Geometry Preservation</h3>
                 <p>
-                  Layered architecture with an ephemeral 60 FPS tracking overlay and a dedicated persistent ink layer that preserves completed strokes during tracking pauses and resizing.
+                  Uniform scale factor preserves aspect ratios and multi-stroke mathematical spatial relationships (minus signs, fraction bars, division dots, plus signs).
                 </p>
               </div>
             </div>
 
             <div className="info-card">
-              <div className="info-icon">🔒</div>
+              <div className="info-icon">🎯</div>
               <div className="info-body">
-                <h3>Local & Responsive</h3>
+                <h3>Local Recognition (M5)</h3>
                 <p>
-                  Zero network latency with client-side MediaPipe inference. Full mirror alignment ensures index fingertip writing matches screen ink effortlessly.
+                  Evaluates processed strokes using a canonical 76-dimensional feature vector with sub-millisecond latency, zero external API dependencies, and built-in dataset labeling.
                 </p>
               </div>
             </div>
@@ -68,7 +68,7 @@ export default function App() {
       <footer className="app-footer">
         <div className="footer-container">
           <p className="footer-copy">
-            <strong>AeroSolve</strong> &copy; {CURRENT_YEAR} — Milestone 3 (Air-Writing Interaction).
+            <strong>AeroSolve</strong> &copy; {CURRENT_YEAR} — Milestone 5 (Local Symbol Recognition).
           </p>
           <div className="footer-links">
             <span className="footer-tag">Python 3.15 + FastAPI</span>

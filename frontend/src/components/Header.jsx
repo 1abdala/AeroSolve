@@ -44,7 +44,7 @@ export default function Header() {
         <div className="header-meta">
           <span className="milestone-pill" title="Current Development Stage">
             <span className="pill-dot"></span>
-            Milestone 3: Air-Writing
+            Milestone 4: Stroke Processing
           </span>
         </div>
       </div>
