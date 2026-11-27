@@ -1,7 +1,13 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { parseExpression, ParseError } from '../services/expressionParser.js';
 import { evaluateExpression, EvaluationError } from '../services/expressionEvaluator.js';
-import { verifyAnswer, verifySingleStep, generateStepHint } from '../services/solutionVerifier.js';
+import { verifyAnswer, verifySingleStep } from '../services/solutionVerifier.js';
+import {
+  classifyStepError,
+  generateProgressiveHint,
+  translateCategoryLabel,
+} from '../services/educationalFeedback.js';
+import { createSessionMistakeTracker } from '../services/sessionMistakeTracker.js';
 
 /**
  * Standard arithmetic operators and grouping delimiters supported by the workspace.
@@ -99,6 +105,9 @@ export default function ExpressionWorkspace({
   onStepComplete,
   initialStepHistory = null,
   initialStepFeedback = null,
+  initialActiveHint = null,
+  initialHintLevel = 1,
+  initialTrackerSummary = null,
   onCheckStep,
   initialStepCandidate = null,
 }) {
@@ -156,9 +165,16 @@ export default function ExpressionWorkspace({
       .map((t) => t.display || t.value)
       .join(' ');
 
-  // Milestone 7.1 (Phase C): Step Verification Feedback, Anti-Spoiler Hints & Completion State
+  // Milestone 7.1/7.2: Step Verification Feedback, Anti-Spoiler Progressive Hints & Completion State
   const [stepFeedback, setStepFeedback] = useState(initialStepFeedback || null);
-  const [activeHint, setActiveHint] = useState(null);
+  const [hintLevel, setHintLevel] = useState(initialHintLevel || 1);
+  const [activeHint, setActiveHint] = useState(initialActiveHint || null);
+
+  // Milestone 7.2 (Phase D): In-Memory Session-Local Mistake Tracker
+  const [mistakeTracker] = useState(() => createSessionMistakeTracker({ repetitionThreshold: 2 }));
+  const [trackerSummary, setTrackerSummary] = useState(
+    () => initialTrackerSummary || mistakeTracker.getSummary()
+  );
   const [isCompleted, setIsCompleted] = useState(() => {
     if (stepHistoryList.length > 0) {
       const last = stepHistoryList[stepHistoryList.length - 1];
@@ -293,7 +309,27 @@ export default function ExpressionWorkspace({
     if (!prevExprTokens || prevExprTokens.length === 0) return;
 
     const result = verifySingleStep(prevExprTokens, activeStepTokens);
-    setStepFeedback(result);
+    let educationalResult = null;
+    try {
+      educationalResult = classifyStepError(prevExprTokens, activeStepTokens, result);
+    } catch {
+      educationalResult = null;
+    }
+
+    const mergedFeedback = {
+      ...result,
+      feedback: {
+        ...result.feedback,
+        title: educationalResult?.title || result.feedback?.title || (result.isValid ? 'Valid Step!' : 'Step Error'),
+        message: educationalResult?.explanation || result.feedback?.message,
+        category: educationalResult?.category || result.feedback?.category,
+        remediationAdvice: educationalResult?.remediationAdvice || null,
+        confidence: educationalResult?.confidence || 'DEFINITIVE',
+        suggestedHintLevel: educationalResult?.suggestedHintLevel || 1,
+      },
+      educational: educationalResult,
+    };
+    setStepFeedback(mergedFeedback);
 
     if (result.isValid) {
       const newStepIndex = stepHistoryList.length + 1;
@@ -331,14 +367,25 @@ export default function ExpressionWorkspace({
       }
 
       setActiveHint(null);
+      setHintLevel(1);
 
       if (result.status === 'COMPLETED' || result.isComplete) {
         setIsCompleted(true);
+        mistakeTracker.reset();
+        setTrackerSummary(mistakeTracker.getSummary());
         if (onStepComplete) onStepComplete(result);
       }
 
       if (onStepVerified) onStepVerified(result);
     } else {
+      if (educationalResult?.category) {
+        const updated = mistakeTracker.recordMistake(
+          educationalResult.category,
+          stepHistoryList.length + 1,
+          stepCandidateString
+        );
+        setTrackerSummary(updated);
+      }
       if (onStepRejected) onStepRejected(result);
     }
 
@@ -357,6 +404,7 @@ export default function ExpressionWorkspace({
     onStepRejected,
     onCheckStep,
     stepCandidateString,
+    mistakeTracker,
   ]);
 
   // Milestone 7.1 (Phase C): Undo Last Step Action
@@ -386,6 +434,8 @@ export default function ExpressionWorkspace({
     }
 
     setIsCompleted(false);
+    mistakeTracker.pruneToStep(updatedHistory.length);
+    setTrackerSummary(mistakeTracker.getSummary());
     setStepFeedback({
       isValid: true,
       status: 'UNDO',
@@ -395,7 +445,8 @@ export default function ExpressionWorkspace({
       },
     });
     setActiveHint(null);
-  }, [stepHistoryList, onSetStepHistory, onSetWorkingTokens, tokens]);
+    setHintLevel(1);
+  }, [stepHistoryList, onSetStepHistory, onSetWorkingTokens, tokens, mistakeTracker]);
 
   // Milestone 7.1 (Phase C): Restart Step-by-Step Sequence Action
   const handleRestartStepSequence = useCallback(() => {
@@ -418,20 +469,56 @@ export default function ExpressionWorkspace({
     }
 
     setIsCompleted(false);
+    mistakeTracker.reset();
+    setTrackerSummary(mistakeTracker.getSummary());
     setStepFeedback(null);
     setActiveHint(null);
-  }, [onSetStepHistory, onSetWorkingTokens, tokens, onSetStepTokens]);
+    setHintLevel(1);
+  }, [onSetStepHistory, onSetWorkingTokens, tokens, onSetStepTokens, mistakeTracker]);
 
-  // Milestone 7.1 (Phase C): Anti-Spoiler Hint Toggle
+  // Milestone 7.2 (Phase C): Progressive Anti-Spoiler Hint Controls
   const handleToggleHint = useCallback(() => {
     if (activeHint) {
       setActiveHint(null);
+      setHintLevel(1);
       return;
     }
-    const currentExpr = activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
-    const hint = generateStepHint(currentExpr);
+    const currentExpr =
+      activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
+    const hint = generateProgressiveHint(currentExpr, 1);
+    setHintLevel(1);
     setActiveHint(hint);
   }, [activeHint, activeWorkingTokens, tokens]);
+
+  const handleNextHintLevel = useCallback(() => {
+    const nextLevel = Math.min(3, hintLevel + 1);
+    const currentExpr =
+      activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
+    const hint = generateProgressiveHint(currentExpr, nextLevel);
+    setHintLevel(nextLevel);
+    setActiveHint(hint);
+  }, [hintLevel, activeWorkingTokens, tokens]);
+
+  const handlePrevHintLevel = useCallback(() => {
+    const prevLevel = Math.max(1, hintLevel - 1);
+    const currentExpr =
+      activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
+    const hint = generateProgressiveHint(currentExpr, prevLevel);
+    setHintLevel(prevLevel);
+    setActiveHint(hint);
+  }, [hintLevel, activeWorkingTokens, tokens]);
+
+  const handleSelectHintLevel = useCallback(
+    (targetLevel) => {
+      const clampedLevel = Math.max(1, Math.min(3, targetLevel));
+      const currentExpr =
+        activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
+      const hint = generateProgressiveHint(currentExpr, clampedLevel);
+      setHintLevel(clampedLevel);
+      setActiveHint(hint);
+    },
+    [activeWorkingTokens, tokens]
+  );
 
   // Milestone 6.4 (Phase C): Candidate Answer Buffer State (Controlled or Uncontrolled fallback)
   const [internalAnswerDigits, setInternalAnswerDigits] = useState([]);
@@ -966,14 +1053,59 @@ export default function ExpressionWorkspace({
                             {stepFeedback.feedback?.title || (stepFeedback.isValid ? 'Valid Step!' : 'Step Error')}
                           </h4>
                           {stepFeedback.feedback?.category && (
-                            <span className="diagnostic-category-badge" id="step-feedback-category">
-                              {stepFeedback.feedback.category.replace(/_/g, ' ')}
+                            <span
+                              className="diagnostic-category-badge"
+                              id="step-feedback-category"
+                              title={String(stepFeedback.feedback.category).replace(/_/g, ' ')}
+                              data-category={stepFeedback.feedback.category}
+                            >
+                              {translateCategoryLabel(stepFeedback.feedback.category) || String(stepFeedback.feedback.category).replace(/_/g, ' ')}
+                            </span>
+                          )}
+                          {stepFeedback.feedback?.confidence && stepFeedback.feedback.confidence !== 'DEFINITIVE' && (
+                            <span
+                              className={`confidence-pill confidence-${String(stepFeedback.feedback.confidence).toLowerCase()}`}
+                              id="step-feedback-confidence"
+                              title={`Analysis confidence: ${String(stepFeedback.feedback.confidence).toLowerCase()}`}
+                            >
+                              {stepFeedback.feedback.confidence === 'PROBABLE' ? 'Probable' : 'Suggested'}
                             </span>
                           )}
                         </div>
                         <p className="feedback-msg" id="step-feedback-message">
                           {stepFeedback.feedback?.message}
                         </p>
+                        {stepFeedback.feedback?.remediationAdvice && (
+                          <div className="feedback-remediation-tip" id="step-feedback-remediation">
+                            <span className="tip-badge">💡 Tip:</span>
+                            <span className="tip-text">{stepFeedback.feedback.remediationAdvice}</span>
+                          </div>
+                        )}
+                        {trackerSummary?.patternInsight && !stepFeedback.isValid && (
+                          <div className="feedback-pattern-alert" id="step-pattern-alert" aria-label="Repeated Error Guidance">
+                            <div className="pattern-alert-header">
+                              <span className="pattern-alert-icon">🔄</span>
+                              <span className="pattern-alert-title" id="pattern-alert-title">
+                                {trackerSummary.patternInsight.title}
+                              </span>
+                              <span className="pattern-count-badge" id="pattern-alert-count">
+                                {`Encountered ${trackerSummary.patternInsight.count}×`}
+                              </span>
+                            </div>
+                            <p className="pattern-alert-msg" id="pattern-alert-message">
+                              {trackerSummary.patternInsight.supportiveMessage}
+                            </p>
+                            <button
+                              type="button"
+                              className="btn-pattern-hint-action"
+                              id="btn-pattern-hint-action"
+                              onClick={() => handleSelectHintLevel(trackerSummary.patternInsight.recommendedHintLevel || 2)}
+                              title="Open suggested hint level"
+                            >
+                              {`💡 Open Hint Level ${trackerSummary.patternInsight.recommendedHintLevel || 2} Guidance ➔`}
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -990,14 +1122,19 @@ export default function ExpressionWorkspace({
                 </div>
               )}
 
-              {/* Milestone 7.1 (Phase C): Anti-Spoiler Pedagogical Hint Card */}
+              {/* Milestone 7.2 (Phase C): Anti-Spoiler Progressive Guidance Hint Card */}
               {activeHint && (
                 <div className="step-hint-card" id="step-hint-card" role="region" aria-label="Step Hint">
                   <div className="hint-card-header">
                     <div className="hint-header-title">
                       <span className="hint-icon">💡</span>
-                      <h4 className="hint-title">Step Hint</h4>
-                      <span className="anti-spoiler-pill" title="This hint guides your calculation order without spoiling answers">
+                      <h4 className="hint-title" id="step-hint-title">
+                        {activeHint.title || 'Step Guidance'}
+                      </h4>
+                      <span className="hint-level-pill" id="step-hint-level-badge">
+                        {`Level ${activeHint.level || hintLevel} of 3`}
+                      </span>
+                      <span className="anti-spoiler-pill" title="This guidance helps your thought process without spoiling answers">
                         🛡️ Anti-Spoiler
                       </span>
                     </div>
@@ -1005,20 +1142,120 @@ export default function ExpressionWorkspace({
                       type="button"
                       className="btn-dismiss-hint"
                       id="btn-dismiss-hint"
-                      onClick={() => setActiveHint(null)}
+                      onClick={() => {
+                        setActiveHint(null);
+                        setHintLevel(1);
+                      }}
                       title="Close hint"
                       aria-label="Close hint"
                     >
                       ×
                     </button>
                   </div>
+
+                  {/* Progressive Level Navigation Tabs */}
+                  <div className="hint-level-tabs" role="tablist" aria-label="Hint Detail Levels">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={(activeHint.level || hintLevel) === 1}
+                      className={`hint-level-tab ${(activeHint.level || hintLevel) === 1 ? 'active' : ''}`}
+                      id="btn-hint-level-1"
+                      onClick={() => handleSelectHintLevel(1)}
+                      title="Level 1: General concept nudge"
+                    >
+                      1. Concept
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={(activeHint.level || hintLevel) === 2}
+                      className={`hint-level-tab ${(activeHint.level || hintLevel) === 2 ? 'active' : ''}`}
+                      id="btn-hint-level-2"
+                      onClick={() => handleSelectHintLevel(2)}
+                      title="Level 2: Focused operation guidance"
+                    >
+                      2. Focus
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={(activeHint.level || hintLevel) === 3}
+                      className={`hint-level-tab ${(activeHint.level || hintLevel) === 3 ? 'active' : ''}`}
+                      id="btn-hint-level-3"
+                      onClick={() => handleSelectHintLevel(3)}
+                      title="Level 3: Rule explanation & example"
+                    >
+                      3. Example
+                    </button>
+                  </div>
+
                   <div className="hint-card-body">
-                    <p className="hint-message" id="step-hint-message">{activeHint.message}</p>
+                    <p className="hint-message" id="step-hint-message">
+                      {activeHint.hintText || activeHint.message}
+                    </p>
+
+                    {/* Level 2: Focus Subexpression Operation */}
                     {activeHint.targetSubexpression && (
-                      <div className="hint-target-row">
+                      <div className="hint-target-row" id="step-hint-target-row">
                         <span className="hint-target-label">Focus operation:</span>
-                        <code className="hint-target-expr" id="step-hint-target">{activeHint.targetSubexpression}</code>
+                        <code className="hint-target-expr" id="step-hint-target">
+                          {activeHint.targetSubexpression}
+                        </code>
                       </div>
+                    )}
+
+                    {/* Level 3: Validated Parallel Example Card */}
+                    {(activeHint.level || hintLevel) === 3 && activeHint.hasParallelExample && activeHint.parallelExample && (
+                      <div className="hint-parallel-example-box" id="hint-parallel-example" aria-label="Parallel Example">
+                        <div className="parallel-example-header">
+                          <span className="parallel-example-icon">📖</span>
+                          <span className="parallel-example-heading">Similar Example (Different Numbers):</span>
+                        </div>
+                        <div className="parallel-example-content">
+                          <div className="parallel-example-line">
+                            <span className="parallel-line-label">Expression:</span>
+                            <code className="parallel-line-code" id="parallel-example-expr">
+                              {activeHint.parallelExample.expression}
+                            </code>
+                          </div>
+                          <div className="parallel-example-line">
+                            <span className="parallel-line-label">First step:</span>
+                            <span className="parallel-line-text" id="parallel-example-step">
+                              {activeHint.parallelExample.firstStep}
+                            </span>
+                          </div>
+                          <p className="parallel-example-note" id="parallel-example-note">
+                            {activeHint.parallelExample.explanation}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Progressive Hint Navigation Controls */}
+                  <div className="hint-card-footer">
+                    {(activeHint.level || hintLevel) > 1 && (
+                      <button
+                        type="button"
+                        className="btn-hint-nav btn-hint-prev"
+                        id="btn-prev-hint-level"
+                        onClick={handlePrevHintLevel}
+                        title="Go back to previous hint level"
+                      >
+                        ⬅ Previous Level
+                      </button>
+                    )}
+                    {(activeHint.level || hintLevel) < 3 && (
+                      <button
+                        type="button"
+                        className="btn-hint-nav btn-hint-next"
+                        id="btn-next-hint-level"
+                        onClick={handleNextHintLevel}
+                        title="Need more help? Go to next hint level"
+                      >
+                        {`Need more help? Level ${(activeHint.level || hintLevel) + 1} ➔`}
+                      </button>
                     )}
                   </div>
                 </div>

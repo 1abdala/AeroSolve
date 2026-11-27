@@ -128,17 +128,20 @@ AeroSolve/
 │   │   ├── components/
 │   │   │   ├── BackendStatus.jsx       # Real-time backend status and retry
 │   │   │   ├── CameraPreview.jsx       # Viewport, dual canvas, M4 render modes & Inspector
+│   │   │   ├── ExpressionWorkspace.jsx # M6.4/M7: Air-writing workspace, step solver & feedback
 │   │   │   └── Header.jsx              # Branding & Milestone 4 badge
 │   │   ├── hooks/
 │   │   │   └── useHandTracking.js      # Air-writing loop, stroke management & M4 integration
 │   │   ├── services/
 │   │   │   ├── airWriting.js           # Hysteresis math, distance, stroke rendering algorithms
 │   │   │   ├── api.js                  # API client for backend health
+│   │   │   ├── educationalFeedback.js  # M7.2: Deterministic error classification & progressive hints
 │   │   │   ├── expressionEvaluator.js  # M6.2: AST Evaluator & Step-by-Step Reduction Engine
 │   │   │   ├── expressionParser.js     # M6.1: Recursive-descent parser & AST generation
 │   │   │   ├── handTracking.js         # MediaPipe HandLandmarker singleton service
 │   │   │   ├── oneEuroFilter.js        # One Euro Filter adaptive temporal smoothing
-│   │   │   ├── solutionVerifier.js     # M6.3: Solution Verification & Subtree Reduction Engine
+│   │   │   ├── sessionMistakeTracker.js# M7.2: In-memory session mistake tracker & pattern insight
+│   │   │   ├── solutionVerifier.js     # M6.3/M7.1: Single-step & sequence verification engine
 │   │   │   ├── strokeProcessor.js      # M4 Modular Pipeline: Smooth, Resample, Normalize
 │   │   │   ├── symbolFeatures.js       # M5: 76-dimensional stroke feature extraction
 │   │   │   └── symbolRecognizer.js     # M5: Local MLP inference & qualification gate
@@ -147,14 +150,17 @@ AeroSolve/
 │   │   │   ├── api.test.js             # API service unit tests
 │   │   │   ├── candidateModelV2.test.js# Validation tests for experimental Model V2
 │   │   │   ├── coordinateMirroring.test.js # Webcam coordinate alignment tests
+│   │   │   ├── educationalFeedback.test.js # M7.2: Error classification & progressive hint tests
 │   │   │   ├── expressionEvaluator.test.js # M6.2: AST evaluation, reduction steps & precision tests
 │   │   │   ├── expressionParser.test.js# M6.1: Parser, precedence, AST & error tests
+│   │   │   ├── expressionWorkspace.test.js # M6.4/M7: Workspace, step loop & feedback tests
 │   │   │   ├── geometryCorrection.test.js  # Aspect ratio and bounding box geometry tests
 │   │   │   ├── handTracking.test.js    # Landmark topology & coordinate mapping tests
 │   │   │   ├── m5Remediation.test.js   # Multi-stroke qualification safety tests
 │   │   │   ├── oneEuroFilter.test.js   # One Euro Filter mathematical tests
 │   │   │   ├── qualificationEndToEnd.test.js # End-to-end qualification tests
-│   │   │   ├── solutionVerifier.test.js# M6.3: Answer, equation & step reduction verification tests
+│   │   │   ├── sessionMistakeTracker.test.js # M7.2: Session mistake tracker & pattern tests
+│   │   │   ├── solutionVerifier.test.js# M6.3/M7.1: Answer, equation & single-step verification tests
 │   │   │   ├── strokeProcessor.test.js # M4 Pipeline tests: smoothing, resampling, geometry
 │   │   │   ├── symbolFeatures.test.js  # Feature extraction consistency tests
 │   │   │   └── symbolRecognizer.test.js# Local MLP inference & rejection tests
@@ -208,7 +214,7 @@ npm run dev
 Run both test suites to verify system integrity:
 
 ```powershell
-# Frontend automated tests (277 tests via Vitest across 15 test suites)
+# Frontend automated tests (420 tests via Vitest across 18 test suites)
 cd frontend
 npm test
 
@@ -216,7 +222,7 @@ npm test
 npm run lint
 npm run build
 
-# Backend automated tests (pytest)
+# Backend automated tests (27 tests via pytest across 5 test suites)
 cd ../backend
 .\.venv\Scripts\pytest.exe -v
 ```
@@ -311,7 +317,12 @@ AeroSolve follows a staged milestone development roadmap:
      - **Phase B — Step-by-Step UI Skeleton & Ribbon Integration**: Practice Mode sub-selector (`👣 Step-by-Step` vs. `🎯 Direct Answer`), locked problem reference card, current working expression card, step history timeline, dedicated step candidate ribbon, Copy Current action, step operator and digit toolstrips, and live step syntax validation (`EMPTY`, `READY`, `INCOMPLETE`, `SYNTAX_ERROR`). `[COMPLETED]`
      - **Phase C — Interactive Step Loop, Feedback, Retries & Anti-Spoiler Hints**: Interactive verification loop updating working expressions and timeline history upon accepted reductions, student-friendly educational feedback banner with misconception category badges, single-step and final-step Undo recovery (`btn-undo-step`, `btn-step-undo-final`), session Restart (`btn-step-restart`), on-demand anti-spoiler pedagogical hint card with focus operation targeting, completion celebration card with trophy, and full Solver and Direct Answer Mode isolation. `[COMPLETED]`
      - **Phase D — Comprehensive Integration, Regression & Documentation**: Full end-to-end integration and regression test coverage across all workflow states, precedence error enforcement, step-skipping rejection, associative regrouping, nested parentheses, problem reset handling, and documentation updates. `[COMPLETED]`
-   - **Milestone 7.2+ — Contextual AI Tutoring & Conversational Feedback**: LLM educational feedback, conversational dialogue, and student misconception remediation. `[FUTURE]`
+   - **Milestone 7.2 — Educational Feedback Engine**:
+     - **Phase A — Architecture & Taxonomy Specification**: Comprehensive codebase inspection, formal educational error taxonomy (10 error categories across 4 confidence tiers), deterministic progressive hint architecture, and ephemeral in-memory mistake tracking specification. `[COMPLETED]`
+     - **Phase B — Deterministic Educational Feedback Engine & Unit Tests**: Implemented standalone `educationalFeedback.js` with `classifyStepError()` classifying `PRECEDENCE_VIOLATION`, `ARITHMETIC_SLIP`, `SIGN_ERROR`, `UNSUPPORTED_GROUPING`, `COMPOUND_STEP`, `STEP_SKIPPED`, `NO_PROGRESS`, `SYNTAX_ERROR`, `EVALUATION_ERROR`, and `UNCLASSIFIED_INVALID` across `HIGH`, `MEDIUM`, `LOW`, and `NONE` confidence levels; implemented `generateProgressiveHint()` delivering 3-tier pedagogical scaffolding (Level 1: General Strategy, Level 2: Target Operation, Level 3: Concrete Guidance) strictly adhering to anti-spoiler guarantees. Verified with 37 dedicated unit tests. `[COMPLETED]`
+     - **Phase C — Contextual Feedback UI & Progressive Guidance Integration**: Integrated feedback engine into `ExpressionWorkspace.jsx` and `App.css`. Rendered contextual feedback cards (`#step-feedback-banner`) with category badges, confidence-aware tone, educational explanations, and actionable remediation tips. Implemented interactive 3-tier progressive hint drawer (`#btn-step-hint-progressive`) advancing on demand while keeping Solver and Direct Answer modes strictly isolated. Verified with 7 integration tests. `[COMPLETED]`
+     - **Phase D — Repeated Mistake Awareness, Full Integration, Regression & Documentation**: Implemented ephemeral in-memory session mistake tracker (`sessionMistakeTracker.js`) detecting recurring error categories ($\ge 2$ occurrences) during the active practice session. Surfaced supportive contextual pattern alert cards (`#step-pattern-alert`) with direct hint action shortcuts. Added full undo and restart pruning, zero-persistence privacy guarantees, 420 Vitest unit/integration tests, 27 Pytest tests, clean oxlint run, and verified production build. `[COMPLETED]`
+   - **Milestone 7.3+ — Contextual AI Tutoring & Conversational Feedback**: LLM educational feedback, conversational dialogue, and student misconception remediation. `[FUTURE]`
 
 ---
 
@@ -321,4 +332,5 @@ Per project roadmap specifications:
 - **Milestone 5 (Symbol Recognition)** is closed for the current prototype phase.
 - **Milestone 6 (Mathematical Solving, Verification & UI Integration)** is completed and verified across sub-milestones 6.1, 6.2, 6.3, and 6.4 without modifying M1–M4 pipelines or M5 models.
 - **Milestone 7.1 (Step-by-Step Learning Mode)** is completed and verified across Phases A, B, C, and D, providing an interactive, verifiable step-by-step mathematical learning environment.
-- **Milestone 7.2+ (Contextual AI Tutoring)** is strictly reserved for future conversational LLM guidance and requires explicit planning approval before implementation.
+- **Milestone 7.2 (Educational Feedback Engine)** is completed and verified across Phases A, B, C, and D, providing deterministic misconception classification, 3-tier progressive hints, and session-local repeated-mistake pattern awareness without persistent tracking or external AI dependencies.
+- **Milestone 7.3+ (Contextual AI Tutoring)** is strictly reserved for future conversational LLM guidance and requires explicit planning approval before implementation.

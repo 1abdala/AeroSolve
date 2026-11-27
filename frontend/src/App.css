@@ -4551,6 +4551,119 @@
   flex-wrap: wrap;
 }
 
+/* Confidence Indicator Pill */
+.confidence-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.confidence-pill.confidence-probable {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.confidence-pill.confidence-ambiguous {
+  color: #cbd5e1;
+  border-color: rgba(203, 213, 225, 0.35);
+  background: rgba(203, 213, 225, 0.08);
+}
+
+/* Remediation Advice Tip */
+.feedback-remediation-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.65rem;
+  background: rgba(0, 0, 0, 0.25);
+  border-left: 3px solid #38bdf8;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.82rem;
+  color: #e0f2fe;
+  line-height: 1.4;
+}
+
+.feedback-remediation-tip .tip-badge {
+  font-weight: 700;
+  color: #38bdf8;
+  white-space: nowrap;
+}
+
+.feedback-remediation-tip .tip-text {
+  color: #bae6fd;
+}
+
+/* Session Repeated Mistake Pattern Alert */
+.feedback-pattern-alert {
+  margin-top: 0.55rem;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.pattern-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.pattern-alert-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #a5b4fc;
+}
+
+.pattern-count-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  color: #c7d2fe;
+}
+
+.pattern-alert-msg {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #e0e7ff;
+  line-height: 1.45;
+}
+
+.btn-pattern-hint-action {
+  align-self: flex-start;
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.2);
+  color: #c7d2fe;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-pattern-hint-action:hover {
+  background: rgba(99, 102, 241, 0.35);
+  color: #ffffff;
+  border-color: #818cf8;
+}
+
 .btn-dismiss-feedback {
   background: transparent;
   border: none;
@@ -4664,6 +4777,147 @@
   border: 1px solid rgba(245, 158, 11, 0.3);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
+}
+
+/* Progressive Hint Level Pills & Tabs */
+.hint-level-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+}
+
+.hint-level-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+  padding-bottom: 0.45rem;
+}
+
+.hint-level-tab {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hint-level-tab:hover {
+  color: #fef08a;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.hint-level-tab.active {
+  color: #1e293b;
+  background: #fbbf24;
+  border-color: #f59e0b;
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.3);
+}
+
+/* Parallel Example Card (Level 3) */
+.hint-parallel-example-box {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.parallel-example-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.parallel-example-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+}
+
+.parallel-example-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.parallel-line-label {
+  color: var(--text-muted, #94a3b8);
+  font-weight: 600;
+  font-size: 0.74rem;
+}
+
+.parallel-line-code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-weight: 800;
+  color: #67e8f9;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+
+.parallel-line-text {
+  color: #fef08a;
+  font-weight: 700;
+}
+
+.parallel-example-note {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  font-style: italic;
+}
+
+/* Progressive Hint Footer Navigation */
+.hint-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(245, 158, 11, 0.2);
+  padding-top: 0.5rem;
+  margin-top: 0.2rem;
+  flex-wrap: wrap;
+}
+
+.btn-hint-nav {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-hint-nav:hover {
+  background: rgba(245, 158, 11, 0.25);
+  color: #ffffff;
+  border-color: #f59e0b;
+}
+
+.btn-hint-next {
+  margin-left: auto;
 }
 
 /* Hint Button in Action Bar */

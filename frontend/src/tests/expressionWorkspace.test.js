@@ -1345,4 +1345,385 @@ describe('Milestone 6.4 (Phase A): ExpressionWorkspace Component', () => {
       expect(htmlEmpty).toMatch(/<button[^>]*id="btn-step-hint"[^>]*disabled=""/);
     });
   });
+
+  describe('Milestone 7.2 (Phase C): Contextual Feedback UI & Progressive Guidance Integration', () => {
+    const mockProblemTokens = [
+      { id: '1', type: 'digit', value: '8', display: '8' },
+      { id: '2', type: 'operator', value: '+', display: '+' },
+      { id: '3', type: 'digit', value: '3', display: '3' },
+      { id: '4', type: 'operator', value: '*', display: '×' },
+      { id: '5', type: 'digit', value: '2', display: '2' },
+    ];
+
+    it('renders translated student-friendly category badge, confidence pill, and remediation tip', () => {
+      const contextualFeedback = {
+        isValid: false,
+        isComplete: false,
+        status: 'INVALID',
+        feedback: {
+          title: 'Order of Operations Error',
+          message: 'Multiplication and division must be performed before addition and subtraction.',
+          category: 'PRECEDENCE_VIOLATION',
+          confidence: 'PROBABLE',
+          remediationAdvice: 'Identify and calculate operations with higher precedence first.',
+          suggestedHintLevel: 2,
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: contextualFeedback,
+        })
+      );
+
+      expect(html).toContain('id="step-feedback-title"');
+      expect(html).toContain('Order of Operations Error');
+      expect(html).toContain('id="step-feedback-category"');
+      expect(html).toContain('Order of Operations');
+      expect(html).toContain('id="step-feedback-confidence"');
+      expect(html).toContain('Probable');
+      expect(html).toContain('id="step-feedback-remediation"');
+      expect(html).toContain('💡 Tip:');
+      expect(html).toContain('Identify and calculate operations with higher precedence first.');
+    });
+
+    it('renders Calculation Slip and Sign Error badges with supportive remediation guidance', () => {
+      const slipFeedback = {
+        isValid: false,
+        isComplete: false,
+        status: 'INVALID',
+        feedback: {
+          title: 'Calculation Slip',
+          message: 'You selected the right operation (3 × 2) to calculate, but made a calculation slip.',
+          category: 'ARITHMETIC_SLIP',
+          confidence: 'PROBABLE',
+          remediationAdvice: 'Double-check your basic arithmetic calculation for 3 × 2.',
+          suggestedHintLevel: 2,
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: slipFeedback,
+        })
+      );
+
+      expect(html).toContain('Calculation Slip');
+      expect(html).toContain('Double-check your basic arithmetic calculation for 3 × 2.');
+    });
+
+    it('renders Level 1 Progressive Hint (Concept Nudge) with level badge and zero subexpression leak', () => {
+      const level1Hint = {
+        level: 1,
+        ruleKey: 'PRECEDENCE_PRIORITY',
+        title: 'Order of Operations: Multiplication & Division First',
+        hintText: 'Multiplication and division have higher priority than addition and subtraction.',
+        targetSubexpression: null,
+        operator: '*',
+        hasParallelExample: false,
+        parallelExample: null,
+        antiSpoilerGuarantee: true,
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialActiveHint: level1Hint,
+          initialHintLevel: 1,
+        })
+      );
+
+      expect(html).toContain('id="step-hint-card"');
+      expect(html).toContain('id="step-hint-level-badge"');
+      expect(html).toContain('Level 1 of 3');
+      expect(html).toContain('id="btn-hint-level-1"');
+      expect(html).toContain('active');
+      expect(html).toContain('Multiplication and division have higher priority than addition and subtraction.');
+      expect(html).toContain('id="btn-next-hint-level"');
+      expect(html).toContain('Need more help? Level 2 ➔');
+      // Level 1 does not render target subexpression row
+      expect(html).not.toContain('id="step-hint-target-row"');
+    });
+
+    it('renders Level 2 Progressive Hint (Focused Guidance) with isolated target subexpression', () => {
+      const level2Hint = {
+        level: 2,
+        ruleKey: 'PRECEDENCE_PRIORITY',
+        title: 'Target Operation',
+        hintText: 'Focus on the multiplication: calculate 3 × 2 before adding or subtracting.',
+        targetSubexpression: '3 × 2',
+        operator: '*',
+        hasParallelExample: false,
+        parallelExample: null,
+        antiSpoilerGuarantee: true,
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialActiveHint: level2Hint,
+          initialHintLevel: 2,
+        })
+      );
+
+      expect(html).toContain('Level 2 of 3');
+      expect(html).toContain('id="btn-hint-level-2"');
+      expect(html).toContain('id="step-hint-target-row"');
+      expect(html).toContain('id="step-hint-target"');
+      expect(html).toContain('3 × 2');
+      expect(html).toContain('id="btn-prev-hint-level"');
+      expect(html).toContain('id="btn-next-hint-level"');
+    });
+
+    it('renders Level 3 Progressive Hint with validated parallel example card', () => {
+      const level3Hint = {
+        level: 3,
+        ruleKey: 'PRECEDENCE_PRIORITY',
+        title: 'Rule Explanation & Example',
+        hintText: 'Rule: In standard order of operations, multiplication takes priority. For example, in 5 + 4 × 7, we do 4 × 7 = 28 first.',
+        targetSubexpression: '3 × 2',
+        operator: '*',
+        hasParallelExample: true,
+        parallelExample: {
+          expression: '5 + 4 × 7',
+          firstStep: '4 × 7 = 28',
+          explanation: 'Multiply first: 4 × 7 = 28, then add: 5 + 28 = 33.',
+        },
+        antiSpoilerGuarantee: true,
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialActiveHint: level3Hint,
+          initialHintLevel: 3,
+        })
+      );
+
+      expect(html).toContain('Level 3 of 3');
+      expect(html).toContain('id="btn-hint-level-3"');
+      expect(html).toContain('id="hint-parallel-example"');
+      expect(html).toContain('id="parallel-example-expr"');
+      expect(html).toContain('5 + 4 × 7');
+      expect(html).toContain('id="parallel-example-step"');
+      expect(html).toContain('4 × 7 = 28');
+      expect(html).toContain('id="parallel-example-note"');
+      expect(html).toContain('id="btn-prev-hint-level"');
+      // Level 3 is max level, so next button is not rendered
+      expect(html).not.toContain('id="btn-next-hint-level"');
+    });
+
+    it('renders Level 3 safe non-numerical fallback when parallel example is unavailable', () => {
+      const fallbackHint = {
+        level: 3,
+        ruleKey: 'PRECEDENCE_PRIORITY',
+        title: 'Rule Explanation & Example',
+        hintText: 'Rule: Always calculate operations in strict PEMDAS / BODMAS priority: Parentheses, then Multiplication/Division, then Addition/Subtraction.',
+        targetSubexpression: '3 × 2',
+        operator: '*',
+        hasParallelExample: false,
+        parallelExample: null,
+        antiSpoilerGuarantee: true,
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialActiveHint: fallbackHint,
+          initialHintLevel: 3,
+        })
+      );
+
+      expect(html).toContain('Level 3 of 3');
+      expect(html).toContain('strict PEMDAS / BODMAS priority');
+      expect(html).not.toContain('id="hint-parallel-example"');
+    });
+
+    it('maintains Direct Answer mode isolation from step hints and feedback banners', () => {
+      const htmlDirect = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'direct',
+        })
+      );
+
+      expect(htmlDirect).toContain('id="candidate-answer-display"');
+      expect(htmlDirect).toContain('id="btn-check-answer"');
+      expect(htmlDirect).not.toContain('id="step-feedback-invalid"');
+      expect(htmlDirect).not.toContain('id="step-hint-card"');
+      expect(htmlDirect).not.toContain('id="step-assembly-card"');
+    });
+  });
+
+  describe('Milestone 7.2 (Phase D): Session-Local Repeated Mistake Awareness Integration', () => {
+    const mockProblemTokens = [
+      { id: '1', type: 'digit', value: '8', display: '8' },
+      { id: '2', type: 'operator', value: '+', display: '+' },
+      { id: '3', type: 'digit', value: '3', display: '3' },
+      { id: '4', type: 'operator', value: '*', display: '×' },
+      { id: '5', type: 'digit', value: '2', display: '2' },
+    ];
+
+    it('renders repeated mistake pattern alert when error category reaches repetition threshold', () => {
+      const repeatedTrackerSummary = {
+        totalMistakes: 2,
+        categoryCounts: { PRECEDENCE_VIOLATION: 2 },
+        repeatedCategories: ['PRECEDENCE_VIOLATION'],
+        primaryPattern: 'PRECEDENCE_VIOLATION',
+        patternInsight: {
+          category: 'PRECEDENCE_VIOLATION',
+          count: 2,
+          title: 'Order of Operations Pattern',
+          supportiveMessage:
+            'You have encountered order-of-operation hurdles on this problem. Remember that multiplication and division take priority over addition and subtraction (PEMDAS / BODMAS). Check the hint for step-by-step guidance!',
+          recommendedHintLevel: 2,
+        },
+      };
+
+      const stepFeedback = {
+        isValid: false,
+        isComplete: false,
+        status: 'INVALID',
+        feedback: {
+          title: 'Order of Operations Error',
+          message: 'Multiplication and division must be performed before addition and subtraction.',
+          category: 'PRECEDENCE_VIOLATION',
+          confidence: 'PROBABLE',
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: stepFeedback,
+          initialTrackerSummary: repeatedTrackerSummary,
+        })
+      );
+
+      expect(html).toContain('id="step-pattern-alert"');
+      expect(html).toContain('id="pattern-alert-title"');
+      expect(html).toContain('Order of Operations Pattern');
+      expect(html).toContain('id="pattern-alert-count"');
+      expect(html).toContain('Encountered 2×');
+      expect(html).toContain('id="pattern-alert-message"');
+      expect(html).toContain('PEMDAS / BODMAS');
+      expect(html).toContain('id="btn-pattern-hint-action"');
+      expect(html).toContain('Open Hint Level 2 Guidance ➔');
+    });
+
+    it('does not render pattern alert when mistakes are below repetition threshold', () => {
+      const belowThresholdSummary = {
+        totalMistakes: 1,
+        categoryCounts: { PRECEDENCE_VIOLATION: 1 },
+        repeatedCategories: [],
+        primaryPattern: null,
+        patternInsight: null,
+      };
+
+      const stepFeedback = {
+        isValid: false,
+        isComplete: false,
+        status: 'INVALID',
+        feedback: {
+          title: 'Order of Operations Error',
+          message: 'Multiplication and division must be performed before addition.',
+          category: 'PRECEDENCE_VIOLATION',
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: stepFeedback,
+          initialTrackerSummary: belowThresholdSummary,
+        })
+      );
+
+      expect(html).not.toContain('id="step-pattern-alert"');
+    });
+
+    it('does not render pattern alert on valid step feedback even if prior mistakes exist', () => {
+      const activePatternSummary = {
+        totalMistakes: 2,
+        categoryCounts: { PRECEDENCE_VIOLATION: 2 },
+        repeatedCategories: ['PRECEDENCE_VIOLATION'],
+        primaryPattern: 'PRECEDENCE_VIOLATION',
+        patternInsight: {
+          category: 'PRECEDENCE_VIOLATION',
+          count: 2,
+          title: 'Order of Operations Pattern',
+          supportiveMessage: 'Take your time to review PEMDAS / BODMAS.',
+          recommendedHintLevel: 2,
+        },
+      };
+
+      const validFeedback = {
+        isValid: true,
+        status: 'VALID',
+        feedback: {
+          title: 'Valid Step',
+          message: 'Reduced 3 × 2 = 6',
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: validFeedback,
+          initialTrackerSummary: activePatternSummary,
+        })
+      );
+
+      // On valid steps, pattern alert should NOT be shown
+      expect(html).not.toContain('id="step-pattern-alert"');
+    });
+
+    it('maintains Solver Mode isolation from repeated mistake alerts', () => {
+      const activePatternSummary = {
+        totalMistakes: 2,
+        categoryCounts: { PRECEDENCE_VIOLATION: 2 },
+        repeatedCategories: ['PRECEDENCE_VIOLATION'],
+        primaryPattern: 'PRECEDENCE_VIOLATION',
+        patternInsight: {
+          category: 'PRECEDENCE_VIOLATION',
+          count: 2,
+          title: 'Order of Operations Pattern',
+          supportiveMessage: 'Take your time to review PEMDAS / BODMAS.',
+          recommendedHintLevel: 2,
+        },
+      };
+
+      const htmlSolver = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'solver',
+          initialTrackerSummary: activePatternSummary,
+        })
+      );
+
+      expect(htmlSolver).not.toContain('id="step-pattern-alert"');
+      expect(htmlSolver).toContain('id="tab-mode-solver"');
+    });
+  });
 });
