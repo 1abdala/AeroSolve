@@ -12,6 +12,9 @@ import {
   verifyEquationString,
   matchSubtreeReduction,
   verifyStepSequence,
+  matchAssociativeReduction,
+  verifySingleStep,
+  generateStepHint,
   VerificationError,
 } from '../services/solutionVerifier.js';
 
@@ -379,6 +382,248 @@ describe('Milestone 6.3: Solution Verification Engine', () => {
       expect(res.status).toBe('EVALUATION_ERROR');
       expect(res.isValidSequence).toBe(false);
       expect(res.firstFailureStepIndex).toBe(1);
+    });
+  });
+
+  describe('Milestone 7.1 (Phase A): verifySingleStep API', () => {
+    it('verifies a valid intermediate reduction step', () => {
+      const res = verifySingleStep('8 + 3 * 2', '8 + 6');
+      expect(res.isValid).toBe(true);
+      expect(res.isComplete).toBe(false);
+      expect(res.status).toBe('VALID');
+      expect(res.reductions).toBe(1);
+      expect(res.result).toBe(14);
+      expect(res.formattedResult).toBe('14');
+      expect(res.feedback.title).toBe('Valid Step');
+    });
+
+    it('verifies a valid final step completing the reduction to a literal', () => {
+      const res = verifySingleStep('8 + 6', '14');
+      expect(res.isValid).toBe(true);
+      expect(res.isComplete).toBe(true);
+      expect(res.status).toBe('COMPLETED');
+      expect(res.reductions).toBe(1);
+      expect(res.result).toBe(14);
+      expect(res.feedback.title).toBe('Problem Solved!');
+    });
+
+    it('verifies a single-operation initial problem completing to a literal', () => {
+      const res = verifySingleStep('5 + 3', '8');
+      expect(res.isValid).toBe(true);
+      expect(res.isComplete).toBe(true);
+      expect(res.status).toBe('COMPLETED');
+    });
+
+    it('accepts alternative valid reduction orders in independent subtrees', () => {
+      const initial = '(2 + 3) * (4 + 5)';
+
+      // Path A: Reduce left branch first
+      const resLeft = verifySingleStep(initial, '5 * (4 + 5)');
+      expect(resLeft.isValid).toBe(true);
+      expect(resLeft.isComplete).toBe(false);
+      expect(resLeft.status).toBe('VALID');
+      expect(resLeft.reductions).toBe(1);
+
+      // Path B: Reduce right branch first
+      const resRight = verifySingleStep(initial, '(2 + 3) * 9');
+      expect(resRight.isValid).toBe(true);
+      expect(resRight.isComplete).toBe(false);
+      expect(resRight.status).toBe('VALID');
+      expect(resRight.reductions).toBe(1);
+    });
+
+    it('accepts simultaneous multi-reductions in independent subtrees in one step', () => {
+      const initial = '(2 + 3) * (4 + 5)';
+      const res = verifySingleStep(initial, '5 * 9');
+      expect(res.isValid).toBe(true);
+      expect(res.isComplete).toBe(false);
+      expect(res.status).toBe('VALID');
+      expect(res.reductions).toBe(2);
+    });
+
+    it('rejects an identical repeated expression without progress (NO_PROGRESS)', () => {
+      const res = verifySingleStep('8 + 3 * 2', '8 + 3 * 2');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('NO_PROGRESS');
+      expect(res.reductions).toBe(0);
+      expect(res.feedback.category).toBe('NO_PROGRESS');
+    });
+
+    it('rejects an arithmetic calculation error within a subexpression', () => {
+      const res = verifySingleStep('8 + 3 * 2', '8 + 7');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('INVALID');
+      expect(res.reductions).toBe(0);
+      expect(res.feedback.category).toBe('ARITHMETIC_ERROR');
+    });
+
+    it('rejects an operator precedence violation', () => {
+      const res = verifySingleStep('8 + 3 * 2', '11 * 2');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('INVALID');
+      expect(res.feedback.category).toBe('PRECEDENCE_ERROR');
+      expect(res.feedback.message).toContain('Operator precedence violation');
+    });
+
+    it('rejects an unverified leap that preserves overall numerical value', () => {
+      const res = verifySingleStep('2 + 3 * 4', '10 + 4');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('UNVERIFIED');
+      expect(res.feedback.category).toBe('UNVERIFIED_TRANSFORMATION');
+      expect(res.feedback.message).toContain('preserves the overall mathematical value');
+    });
+
+    it('handles syntax error in student step gracefully', () => {
+      const res = verifySingleStep('8 + 3 * 2', '8 + * 2');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('SYNTAX_ERROR');
+      expect(res.feedback.category).toBe('SYNTAX_ERROR');
+    });
+
+    it('handles runtime evaluation error in student step gracefully', () => {
+      const res = verifySingleStep('10 - 2', '8 / (2 - 2)');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('EVALUATION_ERROR');
+      expect(res.feedback.category).toBe('EVALUATION_ERROR');
+    });
+  });
+
+  describe('Milestone 7.1 (Phase A): Educational Step-Skipping Guard', () => {
+    it('forbids jumping directly to final answer when multiple operations remain', () => {
+      // 8 + 3 * 2 has 2 operations (* and +). Jumping directly to 14 must be rejected
+      const res = verifySingleStep('8 + 3 * 2', '14');
+      expect(res.isValid).toBe(false);
+      expect(res.isComplete).toBe(false);
+      expect(res.status).toBe('STEP_SKIPPED');
+      expect(res.feedback.category).toBe('STEP_SKIPPED');
+      expect(res.feedback.message).toContain('Directly submitting the final answer is not permitted');
+    });
+
+    it('forbids jumping directly to final answer for 3-operation expressions', () => {
+      const res = verifySingleStep('(2 + 3) * (4 + 5)', '45');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('STEP_SKIPPED');
+    });
+
+    it('allows reaching final literal when only one operation remains (legitimate final step)', () => {
+      // 8 + 6 has only 1 operation remaining, so reaching 14 is NOT a step skip
+      const res = verifySingleStep('8 + 6', '14');
+      expect(res.isValid).toBe(true);
+      expect(res.isComplete).toBe(true);
+      expect(res.status).toBe('COMPLETED');
+    });
+
+    it('permits jumping to final answer when allowStepSkipping is explicitly enabled', () => {
+      const res = verifySingleStep('8 + 3 * 2', '14', { allowStepSkipping: true });
+      expect(res.isValid).toBe(true);
+      expect(res.isComplete).toBe(true);
+      expect(res.status).toBe('COMPLETED');
+    });
+  });
+
+  describe('Milestone 7.1 (Phase A): Associative Grouping Policy', () => {
+    it('directly evaluates matchAssociativeReduction on AST nodes', () => {
+      const prevAST = parseExpression('2 + 3 + 4');
+      const nextAST = parseExpression('2 + 7');
+      const res = matchAssociativeReduction(prevAST, nextAST);
+      expect(res.matches).toBe(true);
+      expect(res.reductions).toBe(1);
+      expect(res.reducedSubexpression).toBe('3 + 4');
+      expect(res.subResult).toBe(7);
+      expect(matchAssociativeReduction(prevAST, parseExpression('2 + 8')).matches).toBe(false);
+    });
+
+    it('accepts associative regrouping for flat addition chains', () => {
+      // 2 + 3 + 4 -> 2 + 7 (reducing 3 + 4 = 7)
+      const res = verifySingleStep('2 + 3 + 4', '2 + 7');
+      expect(res.isValid).toBe(true);
+      expect(res.status).toBe('VALID');
+      expect(res.reductions).toBe(1);
+      expect(res.feedback.message).toContain('3 + 4 = 7');
+    });
+
+    it('accepts associative regrouping for flat multiplication chains', () => {
+      // 2 * 3 * 4 -> 2 * 12 (reducing 3 * 4 = 12)
+      const res = verifySingleStep('2 * 3 * 4', '2 * 12');
+      expect(res.isValid).toBe(true);
+      expect(res.status).toBe('VALID');
+      expect(res.reductions).toBe(1);
+      expect(res.feedback.message).toContain('3 × 4 = 12');
+    });
+
+    it('rejects regrouping or transformations of subtraction (non-associative)', () => {
+      // 10 - 4 - 2 -> 10 - 2 is mathematically invalid (10 - 4 - 2 = 4, but 10 - 2 = 8)
+      const res = verifySingleStep('10 - 4 - 2', '10 - 2');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('INVALID');
+    });
+
+    it('rejects regrouping or transformations of division (non-associative)', () => {
+      // 16 / 4 / 2 -> 16 / 2 is mathematically invalid (16 / 4 / 2 = 2, but 16 / 2 = 8)
+      const res = verifySingleStep('16 / 4 / 2', '16 / 2');
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('INVALID');
+    });
+
+    it('disallows associative regrouping when allowAssociativeGrouping is set to false', () => {
+      const res = verifySingleStep('2 + 3 + 4', '2 + 7', { allowAssociativeGrouping: false });
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('UNVERIFIED');
+    });
+  });
+
+  describe('Milestone 7.1 (Phase A): Deterministic Step Hint Generator', () => {
+    it('prioritizes multiplication over addition', () => {
+      const hint = generateStepHint('8 + 3 * 2');
+      expect(hint.targetSubexpression).toBe('3 × 2');
+      expect(hint.operator).toBe('*');
+      expect(hint.rule).toBe('PRECEDENCE_HIGH');
+      expect(hint.message).toContain('3 × 2');
+      expect(hint.isSpoiled).toBe(false);
+      // Guarantee that the computed result '6' or final '14' is NEVER spoiled
+      expect(hint.message).not.toContain('6');
+      expect(hint.message).not.toContain('14');
+    });
+
+    it('prioritizes division over subtraction', () => {
+      const hint = generateStepHint('10 - 8 / 2');
+      expect(hint.targetSubexpression).toBe('8 ÷ 2');
+      expect(hint.operator).toBe('/');
+      expect(hint.rule).toBe('PRECEDENCE_HIGH');
+      expect(hint.isSpoiled).toBe(false);
+      expect(hint.message).not.toContain('4');
+    });
+
+    it('identifies multiple candidate subexpressions of equal priority', () => {
+      const hint = generateStepHint('(2 + 3) * (6 + 7)');
+      expect(hint.targetSubexpression).toContain('2 + 3');
+      expect(hint.targetSubexpression).toContain('6 + 7');
+      expect(hint.message).toContain('You can simplify either');
+      expect(hint.isSpoiled).toBe(false);
+      expect(hint.message).not.toContain('5');
+      expect(hint.message).not.toContain('13');
+    });
+
+    it('guides calculation for single remaining operation', () => {
+      const hint = generateStepHint('8 + 6');
+      expect(hint.targetSubexpression).toBe('8 + 6');
+      expect(hint.rule).toBe('LEFT_TO_RIGHT');
+      expect(hint.message).toContain('8 + 6');
+      expect(hint.isSpoiled).toBe(false);
+      expect(hint.message).not.toContain('14');
+    });
+
+    it('reports already simplified expression when given a single literal', () => {
+      const hint = generateStepHint('42');
+      expect(hint.rule).toBe('ALREADY_SIMPLIFIED');
+      expect(hint.message).toContain('already an irreducible single number');
+      expect(hint.isSpoiled).toBe(false);
+    });
+
+    it('handles syntax error gracefully when generating hint', () => {
+      const hint = generateStepHint('8 + * 2');
+      expect(hint.rule).toBe('SYNTAX_ERROR');
+      expect(hint.isSpoiled).toBe(false);
     });
   });
 });

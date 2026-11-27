@@ -6,6 +6,7 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import ExpressionWorkspace, { OPERATOR_BUTTONS } from '../components/ExpressionWorkspace';
+import { generateStepHint, verifySingleStep } from '../services/solutionVerifier.js';
 
 describe('Milestone 6.4 (Phase A): ExpressionWorkspace Component', () => {
   describe('Operator Buttons Specification', () => {
@@ -792,6 +793,556 @@ describe('Milestone 6.4 (Phase A): ExpressionWorkspace Component', () => {
       expect(htmlPractice).toContain('7 - 3');
       expect(htmlPractice).toContain('id="practice-workspace-section"');
       expect(htmlPractice).not.toContain('id="btn-solve-expression"');
+    });
+  });
+
+  describe('Milestone 7.1 (Phase B): Step-by-Step Learning Mode UI Skeleton', () => {
+    const mockProblemTokens = [
+      { id: '1', type: 'digit', value: '2', display: '2' },
+      { id: '2', type: 'operator', value: '+', display: '+' },
+      { id: '3', type: 'digit', value: '3', display: '3' },
+      { id: '4', type: 'operator', value: '*', display: '×' },
+      { id: '5', type: 'digit', value: '4', display: '4' },
+    ];
+
+    it('renders Practice Mode sub-selector tabs (Step-by-Step and Direct Answer)', () => {
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+        })
+      );
+
+      expect(html).toContain('id="tab-submode-step"');
+      expect(html).toContain('id="tab-submode-direct"');
+      expect(html).toContain('Step-by-Step');
+      expect(html).toContain('Direct Answer');
+    });
+
+    it('renders Step-by-Step UI skeleton when practiceSubMode is step', () => {
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+        })
+      );
+
+      expect(html).toContain('id="step-practice-section"');
+      expect(html).toContain('id="step-reference-card"');
+      expect(html).toContain('id="step-reference-expr"');
+      expect(html).toContain('2 + 3 × 4');
+      expect(html).toContain('id="step-current-working-card"');
+      expect(html).toContain('id="step-working-expr"');
+      expect(html).toContain('id="btn-copy-current-step"');
+      expect(html).toContain('id="step-history-timeline"');
+      expect(html).toContain('id="step-assembly-card"');
+      expect(html).toContain('id="step-ribbon"');
+      expect(html).toContain('id="btn-step-backspace"');
+      expect(html).toContain('id="btn-step-clear"');
+      expect(html).toContain('id="btn-check-step"');
+      expect(html).toContain('id="btn-step-hint"');
+    });
+
+    it('renders step operator controls and step digit pad', () => {
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+        })
+      );
+
+      expect(html).toContain('id="btn-step-op-plus"');
+      expect(html).toContain('id="btn-step-op-minus"');
+      expect(html).toContain('id="btn-step-op-mul"');
+      expect(html).toContain('id="btn-step-op-div"');
+      expect(html).toContain('id="btn-step-op-lparen"');
+      expect(html).toContain('id="btn-step-op-rparen"');
+      expect(html).toContain('id="btn-step-digit-1"');
+      expect(html).toContain('id="btn-step-digit-9"');
+    });
+
+    it('displays Empty Step syntax feedback when step candidate is empty', () => {
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          stepTokens: [],
+        })
+      );
+
+      expect(html).toContain('Empty Step');
+      expect(html).toContain('status-empty');
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*id="btn-check-step"/);
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*id="btn-step-backspace"/);
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*id="btn-step-clear"/);
+    });
+
+    it('displays Incomplete Step syntax feedback for trailing operator in step candidate', () => {
+      const incompleteStepTokens = [
+        { id: 'st_1', type: 'digit', value: '2', display: '2' },
+        { id: 'st_2', type: 'operator', value: '+', display: '+' },
+      ];
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          stepTokens: incompleteStepTokens,
+        })
+      );
+
+      expect(html).toContain('Incomplete Step');
+      expect(html).toContain('status-incomplete');
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*id="btn-check-step"/);
+    });
+
+    it('displays Step Ready syntax feedback and enables Check Step for valid step expression', () => {
+      const readyStepTokens = [
+        { id: 'st_1', type: 'digit', value: '2', display: '2' },
+        { id: 'st_2', type: 'operator', value: '+', display: '+' },
+        { id: 'st_3', type: 'digit', value: '1', display: '1' },
+        { id: 'st_4', type: 'digit', value: '2', display: '2' },
+      ];
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          stepTokens: readyStepTokens,
+        })
+      );
+
+      expect(html).toContain('Step Ready');
+      expect(html).toContain('status-ready');
+      expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*id="btn-check-step"/);
+      expect(html).toContain('id="btn-check-step"');
+    });
+
+    it('renders step history timeline when past steps are provided', () => {
+      const history = [
+        { stepIndex: 1, expression: '2 + 12', reductionNote: 'Reduced 3 × 4 = 12' },
+      ];
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          stepHistory: history,
+        })
+      );
+
+      expect(html).toContain('Solution Timeline:');
+      expect(html).toContain('Completed 1 step(s)');
+      expect(html).toContain('Step 1');
+      expect(html).toContain('2 + 12');
+      expect(html).toContain('Reduced 3 × 4 = 12');
+    });
+
+    it('preserves Direct Answer UI when practiceSubMode is direct', () => {
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'direct',
+          answerDigits: ['1', '4'],
+        })
+      );
+
+      expect(html).toContain('id="candidate-answer-display"');
+      expect(html).toContain('14');
+      expect(html).toContain('id="btn-check-answer"');
+      expect(html).not.toContain('id="step-assembly-card"');
+    });
+
+    it('keeps Solver Mode completely unaffected by Step-by-Step UI', () => {
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'solver',
+        })
+      );
+
+      expect(html).toContain('id="btn-solve-expression"');
+      expect(html).toContain('id="btn-op-plus"');
+      expect(html).not.toContain('id="step-practice-section"');
+      expect(html).not.toContain('id="tab-submode-step"');
+    });
+  });
+
+  describe('Milestone 7.1 (Phase C): Interactive Step Loop, Feedback, Retries & Hints', () => {
+    const mockProblemTokens = [
+      { id: '1', type: 'digit', value: '2', display: '2' },
+      { id: '2', type: 'operator', value: '+', display: '+' },
+      { id: '3', type: 'digit', value: '3', display: '3' },
+      { id: '4', type: 'operator', value: '*', display: '×' },
+      { id: '5', type: 'digit', value: '4', display: '4' },
+    ];
+
+    it('renders valid step feedback and updated working expression for accepted reduction', () => {
+      const stepTokens = [
+        { id: 's1', type: 'digit', value: '2', display: '2' },
+        { id: 's2', type: 'operator', value: '+', display: '+' },
+        { id: 's3', type: 'digit', value: '1', display: '1' },
+        { id: 's4', type: 'digit', value: '2', display: '2' },
+      ];
+      const validFeedback = {
+        isValid: true,
+        status: 'VALID',
+        feedback: {
+          title: 'Valid Step',
+          message: 'Valid step: 1 subexpression(s) reduced.',
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          workingTokens: stepTokens,
+          initialStepFeedback: validFeedback,
+          stepHistory: [
+            { stepIndex: 1, expression: '2 + 12', reductionNote: 'Valid step: 1 subexpression(s) reduced.' },
+          ],
+        })
+      );
+
+      expect(html).toContain('id="step-feedback-valid"');
+      expect(html).toContain('Valid step: 1 subexpression(s) reduced.');
+      expect(html).toContain('id="step-working-expr"');
+      expect(html).toContain('2 + 12');
+      expect(html).toContain('id="btn-undo-step"');
+      expect(html).toContain('id="btn-step-restart"');
+    });
+
+    it('renders completion celebration card when problem is fully solved', () => {
+      const completedFeedback = {
+        isValid: true,
+        isComplete: true,
+        status: 'COMPLETED',
+        feedback: {
+          title: 'Problem Solved!',
+          message: 'Final result 14 reached and verified!',
+        },
+      };
+      const finalTokens = [{ id: 'f1', type: 'digit', value: '1', display: '1' }, { id: 'f2', type: 'digit', value: '4', display: '4' }];
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          workingTokens: finalTokens,
+          initialStepFeedback: completedFeedback,
+          stepHistory: [
+            { stepIndex: 1, expression: '2 + 12', reductionNote: 'Reduced 3 × 4 = 12' },
+            { stepIndex: 2, expression: '14', reductionNote: 'Final result: 14', status: 'COMPLETED' },
+          ],
+        })
+      );
+
+      expect(html).toContain('id="step-completion-card"');
+      expect(html).toContain('Problem Solved!');
+      expect(html).toContain('id="step-final-value"');
+      expect(html).toContain('14');
+      expect(html).toContain('id="btn-step-undo-final"');
+      expect(html).toContain('id="btn-step-restart-final"');
+      // Assembly card is hidden upon completion
+      expect(html).not.toContain('id="step-assembly-card"');
+    });
+
+    it('renders invalid step feedback for operator precedence violation', () => {
+      const precedenceFeedback = {
+        isValid: false,
+        isComplete: false,
+        status: 'INVALID',
+        feedback: {
+          title: 'Incorrect Step',
+          message: 'Operator precedence violation: multiplication and division must be performed before addition and subtraction.',
+          category: 'PRECEDENCE_ERROR',
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: precedenceFeedback,
+        })
+      );
+
+      expect(html).toContain('id="step-feedback-invalid"');
+      expect(html).toContain('id="step-feedback-category"');
+      expect(html).toContain('PRECEDENCE ERROR');
+      expect(html).toContain('multiplication and division must be performed before addition');
+      // Working expression remains original problem
+      expect(html).toContain('id="step-working-expr"');
+      expect(html).toContain('2 + 3 × 4');
+    });
+
+    it('renders step-skipped feedback when intermediate operations are omitted', () => {
+      const skippedFeedback = {
+        isValid: false,
+        isComplete: false,
+        status: 'STEP_SKIPPED',
+        feedback: {
+          title: 'Step Skipped',
+          message: 'You jumped directly to the final answer. In step-by-step mode, please calculate one operation at a time.',
+          category: 'STEP_SKIPPED',
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: skippedFeedback,
+        })
+      );
+
+      expect(html).toContain('id="step-feedback-invalid"');
+      expect(html).toContain('STEP SKIPPED');
+      expect(html).toContain('please calculate one operation at a time');
+    });
+
+    it('renders calculation error feedback when arithmetic is incorrect', () => {
+      const calcFeedback = {
+        isValid: false,
+        isComplete: false,
+        status: 'INVALID',
+        feedback: {
+          title: 'Incorrect Step',
+          message: 'Mathematically invalid step: evaluates to 17, expected 14.',
+          category: 'ARITHMETIC_ERROR',
+        },
+      };
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          initialStepFeedback: calcFeedback,
+        })
+      );
+
+      expect(html).toContain('id="step-feedback-invalid"');
+      expect(html).toContain('ARITHMETIC ERROR');
+      expect(html).toContain('Mathematically invalid step');
+    });
+
+    it('renders anti-spoiler pedagogical hint card without revealing answers', () => {
+      const hint = generateStepHint(mockProblemTokens);
+      expect(hint.isSpoiled).toBe(false);
+      expect(hint.message).not.toContain('12');
+      expect(hint.message).not.toContain('14');
+
+      // Check hint button is ready
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+        })
+      );
+
+      expect(html).toContain('id="btn-step-hint"');
+      expect(html).toContain('💡 Hint');
+    });
+
+    it('supports step recovery via Undo button', () => {
+      const history = [
+        { stepIndex: 1, expression: '2 + 12', reductionNote: 'Reduced 3 × 4 = 12', tokens: [{ id: '1', value: '2' }] },
+      ];
+
+      const html = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: mockProblemTokens,
+          mode: 'practice',
+          practiceSubMode: 'step',
+          stepHistory: history,
+        })
+      );
+
+      expect(html).toContain('id="btn-undo-step"');
+      expect(html).toContain('↩ Undo Step');
+      expect(html).toContain('id="btn-step-restart"');
+      expect(html).toContain('↺ Restart');
+    });
+  });
+
+  describe('Milestone 7.1 (Phase D): Comprehensive Step-by-Step Integration & Regression Suite', () => {
+    it('executes a complete multi-step reduction workflow with hints, invalid attempt, and completion', () => {
+      // 1. Initial problem: 8 + 3 * 2
+      const initialTokens = [
+        { id: '1', type: 'digit', value: '8', display: '8' },
+        { id: '2', type: 'operator', value: '+', display: '+' },
+        { id: '3', type: 'digit', value: '3', display: '3' },
+        { id: '4', type: 'operator', value: '*', display: '×' },
+        { id: '5', type: 'digit', value: '2', display: '2' },
+      ];
+
+      // Step 1 candidate: 8 + 6
+      const step1Tokens = [
+        { id: 's1', type: 'digit', value: '8', display: '8' },
+        { id: 's2', type: 'operator', value: '+', display: '+' },
+        { id: 's3', type: 'digit', value: '6', display: '6' },
+      ];
+
+      // Final step candidate: 14
+      const step2Tokens = [
+        { id: 'f1', type: 'digit', value: '1', display: '1' },
+        { id: 'f2', type: 'digit', value: '4', display: '4' },
+      ];
+
+      // Verify hint for initial expression targets 3 * 2
+      const initialHint = generateStepHint(initialTokens);
+      expect(initialHint.targetSubexpression).toBe('3 × 2');
+      expect(initialHint.operator).toBe('*');
+      expect(initialHint.rule).toBe('PRECEDENCE_HIGH');
+      expect(initialHint.isSpoiled).toBe(false);
+
+      // Verify single-step validation for valid step 1
+      const resStep1 = verifySingleStep(initialTokens, step1Tokens);
+      expect(resStep1.isValid).toBe(true);
+      expect(resStep1.status).toBe('VALID');
+      expect(resStep1.reductions).toBe(1);
+
+      // Verify single-step validation for final step 2
+      const resStep2 = verifySingleStep(step1Tokens, step2Tokens);
+      expect(resStep2.isValid).toBe(true);
+      expect(resStep2.status).toBe('COMPLETED');
+      expect(resStep2.formattedResult).toBe('14');
+
+      // Verify rejection of precedence error (8 + 3 * 2 -> 11 * 2)
+      const invalidPrecedenceTokens = [
+        { id: 'i1', type: 'digit', value: '1', display: '1' },
+        { id: 'i2', type: 'digit', value: '1', display: '1' },
+        { id: 'i3', type: 'operator', value: '*', display: '×' },
+        { id: 'i4', type: 'digit', value: '2', display: '2' },
+      ];
+      const resPrecedence = verifySingleStep(initialTokens, invalidPrecedenceTokens);
+      expect(resPrecedence.isValid).toBe(false);
+      expect(resPrecedence.status).toBe('INVALID');
+      expect(resPrecedence.feedback.category).toBe('PRECEDENCE_ERROR');
+
+      // Verify rejection of skipped operations (jumping directly 8 + 3 * 2 -> 14)
+      const resSkipped = verifySingleStep(initialTokens, step2Tokens);
+      expect(resSkipped.isValid).toBe(false);
+      expect(resSkipped.status).toBe('STEP_SKIPPED');
+      expect(resSkipped.feedback.title).toBe('Step Skipped');
+    });
+
+    it('verifies associative regrouping in step-by-step mode for addition and multiplication', () => {
+      // 2 + 3 + 4 -> 2 + 7 (evaluating 3 + 4 = 7)
+      const addChainTokens = [
+        { id: '1', type: 'digit', value: '2', display: '2' },
+        { id: '2', type: 'operator', value: '+', display: '+' },
+        { id: '3', type: 'digit', value: '3', display: '3' },
+        { id: '4', type: 'operator', value: '+', display: '+' },
+        { id: '5', type: 'digit', value: '4', display: '4' },
+      ];
+      const addRegroupTokens = [
+        { id: 'r1', type: 'digit', value: '2', display: '2' },
+        { id: 'r2', type: 'operator', value: '+', display: '+' },
+        { id: 'r3', type: 'digit', value: '7', display: '7' },
+      ];
+      const resAdd = verifySingleStep(addChainTokens, addRegroupTokens);
+      expect(resAdd.isValid).toBe(true);
+      expect(resAdd.status).toBe('VALID');
+
+      // 2 * 3 * 4 -> 2 * 12 (evaluating 3 * 4 = 12)
+      const mulChainTokens = [
+        { id: '1', type: 'digit', value: '2', display: '2' },
+        { id: '2', type: 'operator', value: '*', display: '×' },
+        { id: '3', type: 'digit', value: '3', display: '3' },
+        { id: '4', type: 'operator', value: '*', display: '×' },
+        { id: '5', type: 'digit', value: '4', display: '4' },
+      ];
+      const mulRegroupTokens = [
+        { id: 'r1', type: 'digit', value: '2', display: '2' },
+        { id: 'r2', type: 'operator', value: '*', display: '×' },
+        { id: 'r3', type: 'digit', value: '1', display: '1' },
+        { id: 'r4', type: 'digit', value: '2', display: '2' },
+      ];
+      const resMul = verifySingleStep(mulChainTokens, mulRegroupTokens);
+      expect(resMul.isValid).toBe(true);
+      expect(resMul.status).toBe('VALID');
+    });
+
+    it('verifies nested parenthesized expressions step-by-step', () => {
+      // (2 + 3) * (4 + 5) -> 5 * (4 + 5) -> 5 * 9 -> 45
+      const expr0 = '(2 + 3) * (4 + 5)';
+      const expr1 = '5 * (4 + 5)';
+      const expr2 = '5 * 9';
+      const expr3 = '45';
+
+      const res1 = verifySingleStep(expr0, expr1);
+      expect(res1.isValid).toBe(true);
+      expect(res1.status).toBe('VALID');
+
+      const res2 = verifySingleStep(expr1, expr2);
+      expect(res2.isValid).toBe(true);
+      expect(res2.status).toBe('VALID');
+
+      const res3 = verifySingleStep(expr2, expr3);
+      expect(res3.isValid).toBe(true);
+      expect(res3.status).toBe('COMPLETED');
+      expect(res3.formattedResult).toBe('45');
+    });
+
+    it('resets step session when problem tokens are modified', () => {
+      const problemA = [
+        { id: '1', type: 'digit', value: '2', display: '2' },
+        { id: '2', type: 'operator', value: '+', display: '+' },
+        { id: '3', type: 'digit', value: '3', display: '3' },
+      ];
+      const problemB = [
+        { id: '4', type: 'digit', value: '5', display: '5' },
+        { id: '5', type: 'operator', value: '*', display: '×' },
+        { id: '6', type: 'digit', value: '6', display: '6' },
+      ];
+
+      // Render problem A
+      const htmlA = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: problemA,
+          mode: 'practice',
+          practiceSubMode: 'step',
+        })
+      );
+      expect(htmlA).toContain('2 + 3');
+
+      // Render problem B
+      const htmlB = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: problemB,
+          mode: 'practice',
+          practiceSubMode: 'step',
+        })
+      );
+      expect(htmlB).toContain('5 × 6');
+      expect(htmlB).not.toContain('2 + 3');
+      expect(htmlB).toContain('Starting Step 1');
+    });
+
+    it('handles empty and malformed expressions gracefully without throwing', () => {
+      const htmlEmpty = renderToString(
+        React.createElement(ExpressionWorkspace, {
+          tokens: [],
+          mode: 'practice',
+          practiceSubMode: 'step',
+        })
+      );
+      expect(htmlEmpty).toContain('No problem loaded');
+      expect(htmlEmpty).toMatch(/<button[^>]*id="btn-copy-current-step"[^>]*disabled=""/);
+      expect(htmlEmpty).toMatch(/<button[^>]*id="btn-step-hint"[^>]*disabled=""/);
     });
   });
 });

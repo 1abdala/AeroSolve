@@ -13,7 +13,7 @@ AeroSolve is an AI-powered air-writing mathematics learning application. This re
   - One Euro Filter (Temporal adaptive jitter filtering for 21 hand landmarks)
   - Modular Stroke Processing Pipeline (Sanitization, Binomial Smoothing, Arc-Length Resampling, Aspect-Ratio Normalization)
   - HTML5 Video & Dual HTML5 Canvas Architecture (Persistent Ink Layer + Real-Time Overlay Layer + M4 Normalized Inspector)
-  - Vitest (312 automated unit, algorithm, and integration tests across 16 test suites)
+  - Vitest (360 automated unit, algorithm, and integration tests across 16 test suites)
   - Oxlint (High-speed JavaScript/JSX static analysis)
 - **Backend**:
   - Python 3.10+ (tested on Python 3.15)
@@ -305,7 +305,13 @@ AeroSolve follows a staged milestone development roadmap:
    - **Milestone 6.2 — AST Evaluation & Step-by-Step Reduction Engine**: Standalone deterministic AST evaluator traversing parsed expressions to compute mathematical results while recording structured intermediate reduction steps, enforcing strict zero-division guards, explicit non-finite handling, and preserving raw numerical precision while cleaning IEEE-754 representation noise for display. `[COMPLETED]`
    - **Milestone 6.3 — Solution Verification Engine**: Standalone deterministic mathematical verification engine featuring structural AST subexpression reduction matching (`matchSubtreeReduction`), multi-step reduction sequence validation, value-invariance checking, alternative reduction order and multi-reduction support, formal numerical tolerance comparison, and conservative heuristic misconception diagnostics. `[COMPLETED]`
    - **Milestone 6.4 — Solver & Verifier UI Integration**: Interactive Air-Writing Expression Assembly Workspace, append-to-end token ribbon, operator toolstrip, live reactive syntax readiness validation (`EMPTY`, `READY`, `INCOMPLETE`, `SYNTAX_ERROR`), step-by-step reduction drawer with subexpression rewrites, strict Solver vs. Practice Mode state isolation, independent Candidate Answer Buffer with multi-digit air-writing accumulation, sign/decimal modifiers, M6.3 deterministic verification integration, and strict anti-spoiler feedback policy. `[COMPLETED]`
-7. **Milestone 7 (M7) — AI Tutoring & Contextual Feedback**: LLM educational feedback, student error diagnosis, and interactive guidance. `[FUTURE]`
+7. **Milestone 7 (M7) — AI Tutoring, Step-by-Step Learning & Contextual Feedback**:
+   - **Milestone 7.1 — Step-by-Step Learning Mode**:
+     - **Phase A — Single-Step Verification Engine & Deterministic Hint Generator**: Implemented `verifySingleStep(prevExpr, nextExpr)` with structural subtree reduction matching, flat chain associative regrouping policy (`+` and `*`), educational step-skipping guards (`STEP_SKIPPED`), operator precedence violation detection (`PRECEDENCE_ERROR`), arithmetic error checking (`ARITHMETIC_ERROR`), unverified leap protection (`UNVERIFIED`), identical expression detection (`NO_PROGRESS`), and deterministic anti-spoiler hint generator (`generateStepHint`) prioritizing operations by PEMDAS/BODMAS without revealing intermediate or final values. `[COMPLETED]`
+     - **Phase B — Step-by-Step UI Skeleton & Ribbon Integration**: Practice Mode sub-selector (`👣 Step-by-Step` vs. `🎯 Direct Answer`), locked problem reference card, current working expression card, step history timeline, dedicated step candidate ribbon, Copy Current action, step operator and digit toolstrips, and live step syntax validation (`EMPTY`, `READY`, `INCOMPLETE`, `SYNTAX_ERROR`). `[COMPLETED]`
+     - **Phase C — Interactive Step Loop, Feedback, Retries & Anti-Spoiler Hints**: Interactive verification loop updating working expressions and timeline history upon accepted reductions, student-friendly educational feedback banner with misconception category badges, single-step and final-step Undo recovery (`btn-undo-step`, `btn-step-undo-final`), session Restart (`btn-step-restart`), on-demand anti-spoiler pedagogical hint card with focus operation targeting, completion celebration card with trophy, and full Solver and Direct Answer Mode isolation. `[COMPLETED]`
+     - **Phase D — Comprehensive Integration, Regression & Documentation**: Full end-to-end integration and regression test coverage across all workflow states, precedence error enforcement, step-skipping rejection, associative regrouping, nested parentheses, problem reset handling, and documentation updates. `[COMPLETED]`
+   - **Milestone 7.2+ — Contextual AI Tutoring & Conversational Feedback**: LLM educational feedback, conversational dialogue, and student misconception remediation. `[FUTURE]`
 
 ---
 
@@ -314,4 +320,5 @@ AeroSolve follows a staged milestone development roadmap:
 Per project roadmap specifications:
 - **Milestone 5 (Symbol Recognition)** is closed for the current prototype phase.
 - **Milestone 6 (Mathematical Solving, Verification & UI Integration)** is completed and verified across sub-milestones 6.1, 6.2, 6.3, and 6.4 without modifying M1–M4 pipelines or M5 models.
-- **Milestone 7 (AI Tutoring)** is strictly reserved for future conversational LLM guidance and requires explicit planning approval before implementation.
+- **Milestone 7.1 (Step-by-Step Learning Mode)** is completed and verified across Phases A, B, C, and D, providing an interactive, verifiable step-by-step mathematical learning environment.
+- **Milestone 7.2+ (Contextual AI Tutoring)** is strictly reserved for future conversational LLM guidance and requires explicit planning approval before implementation.

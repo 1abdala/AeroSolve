@@ -856,3 +856,450 @@ export function verifyStepSequence(initialExpression, studentSteps, options = {}
     message: summaryMessage,
   };
 }
+
+/**
+ * Match associative regrouping in flat homogeneous chains of '+' or '*'.
+ *
+ * Examples:
+ *   2 + 3 + 4 -> 2 + 7 (reducing 3 + 4 = 7)
+ *   2 * 3 * 4 -> 2 * 12 (reducing 3 * 4 = 12)
+ *
+ * Excludes subtraction (-) and division (/), which are not associative.
+ *
+ * @param {object} prevNode - AST of S_{k-1}
+ * @param {object} nextNode - AST of S_k
+ * @param {number} [tolerance=1e-6] - Numerical tolerance
+ * @returns {{ matches: boolean, reductions: number, reducedSubexpression?: string, subResult?: number }}
+ */
+export function matchAssociativeReduction(prevNode, nextNode, tolerance = 1e-6) {
+  if (
+    !prevNode ||
+    !nextNode ||
+    prevNode.type !== 'BinaryExpression' ||
+    nextNode.type !== 'BinaryExpression'
+  ) {
+    return { matches: false, reductions: 0 };
+  }
+
+  if (prevNode.operator !== nextNode.operator) {
+    return { matches: false, reductions: 0 };
+  }
+
+  const op = prevNode.operator;
+  // Strictly restricted to associative and commutative operators: '+' and '*'
+  if (op !== '+' && op !== '*') {
+    return { matches: false, reductions: 0 };
+  }
+
+  function collectTerms(node) {
+    if (node && node.type === 'BinaryExpression' && node.operator === op) {
+      return [...collectTerms(node.left), ...collectTerms(node.right)];
+    }
+    return [node];
+  }
+
+  const prevTerms = collectTerms(prevNode);
+  const nextTerms = collectTerms(nextNode);
+
+  // An associative reduction of one adjacent pair must decrease the term count by exactly 1
+  if (nextTerms.length !== prevTerms.length - 1 || prevTerms.length < 3) {
+    return { matches: false, reductions: 0 };
+  }
+
+  for (let i = 0; i < prevTerms.length - 1; i++) {
+    const leftTerm = prevTerms[i];
+    const rightTerm = prevTerms[i + 1];
+
+    if (leftTerm.type !== 'Literal' || rightTerm.type !== 'Literal') {
+      continue;
+    }
+
+    const leftVal = leftTerm.value;
+    const rightVal = rightTerm.value;
+    const expectedReduced = op === '+' ? leftVal + rightVal : leftVal * rightVal;
+
+    // Construct candidate terms array where adjacent pair (i, i+1) is replaced by expectedReduced
+    const candidateMerged = [
+      ...prevTerms.slice(0, i),
+      { type: 'Literal', value: expectedReduced },
+      ...prevTerms.slice(i + 2),
+    ];
+
+    const allMatch = candidateMerged.every((term, idx) => {
+      const target = nextTerms[idx];
+      return (
+        term.type === 'Literal' &&
+        target &&
+        target.type === 'Literal' &&
+        isNumericallyEquivalent(term.value, target.value, tolerance)
+      );
+    });
+
+    if (allMatch) {
+      const opDisplay = op === '*' ? '×' : '+';
+      return {
+        matches: true,
+        reductions: 1,
+        reducedSubexpression: `${leftVal} ${opDisplay} ${rightVal}`,
+        subResult: expectedReduced,
+      };
+    }
+  }
+
+  return { matches: false, reductions: 0 };
+}
+
+/**
+ * Verify a single incremental step transition E_{k-1} -> E_k in Step-by-Step Learning Mode.
+ *
+ * Validates whether the student's next submitted expression is a legitimate,
+ * mathematically sound, non-skipping step.
+ *
+ * Supports:
+ * - Single subexpression reductions
+ * - Alternative reduction orders in independent branches
+ * - Multi-reductions in independent branches within a single step
+ * - Associative grouping in flat '+' and '*' chains (when allowAssociativeGrouping is true)
+ *
+ * Enforces:
+ * - Educational step-skipping restriction: forbidding direct jumps to final answer
+ *   when multiple operations remain (unless allowStepSkipping is true).
+ * - Exact value and structure validation.
+ * - Semantic statuses: VALID, COMPLETED, INVALID, UNVERIFIED, NO_PROGRESS,
+ *   STEP_SKIPPED, SYNTAX_ERROR, EVALUATION_ERROR.
+ *
+ * @param {object | string | Array} prevExpr - Current working expression E_{k-1}
+ * @param {object | string | Array} nextExpr - Student's submitted step E_k
+ * @param {object} [options] - Verification options
+ * @param {number} [options.tolerance=1e-6] - Numerical tolerance
+ * @param {number} [options.maxDecimals=6] - Max decimals for formatting
+ * @param {boolean} [options.allowAssociativeGrouping=true] - Whether to allow associative regrouping for flat + and *
+ * @param {boolean} [options.allowStepSkipping=false] - Whether to permit jumping directly to final answer
+ * @returns {object} SingleStepVerificationResult
+ */
+export function verifySingleStep(prevExpr, nextExpr, options = {}) {
+  const tolerance = options.tolerance ?? 1e-6;
+  const maxDecimals = options.maxDecimals ?? 6;
+  const allowAssociativeGrouping = options.allowAssociativeGrouping ?? true;
+  const allowStepSkipping = options.allowStepSkipping ?? false;
+
+  // 1. Resolve and evaluate previous expression E_{k-1}
+  let prevAST;
+  let prevEval;
+  try {
+    prevAST = resolveAST(prevExpr);
+    prevEval = evaluateAST(prevAST, { maxDecimals });
+  } catch (err) {
+    return {
+      isValid: false,
+      isComplete: false,
+      status: 'EVALUATION_ERROR',
+      currentExpression: String(prevExpr),
+      nextExpression: String(nextExpr),
+      reductions: 0,
+      result: null,
+      formattedResult: null,
+      feedback: {
+        title: 'Evaluation Error',
+        message: `Failed to evaluate previous expression: ${err.message}`,
+        category: 'EVALUATION_ERROR',
+        reason: err.message,
+      },
+      error: { code: err.code || 'EVALUATION_ERROR', message: err.message },
+    };
+  }
+
+  // 2. Resolve and evaluate next expression E_k
+  let nextAST;
+  try {
+    nextAST = resolveAST(nextExpr);
+  } catch (parseErr) {
+    return {
+      isValid: false,
+      isComplete: false,
+      status: 'SYNTAX_ERROR',
+      currentExpression: astToInfix(prevAST),
+      nextExpression: typeof nextExpr === 'string' ? nextExpr : String(nextExpr),
+      reductions: 0,
+      result: null,
+      formattedResult: null,
+      feedback: {
+        title: 'Syntax Error',
+        message: `Syntax error in step: ${parseErr.message}`,
+        category: 'SYNTAX_ERROR',
+        reason: parseErr.message,
+      },
+      error: { code: parseErr.code || 'SYNTAX_ERROR', message: parseErr.message },
+    };
+  }
+
+  let nextEval;
+  try {
+    nextEval = evaluateAST(nextAST, { maxDecimals });
+  } catch (evalErr) {
+    return {
+      isValid: false,
+      isComplete: false,
+      status: 'EVALUATION_ERROR',
+      currentExpression: astToInfix(prevAST),
+      nextExpression: astToInfix(nextAST),
+      reductions: 0,
+      result: null,
+      formattedResult: null,
+      feedback: {
+        title: 'Evaluation Error',
+        message: `Step caused an evaluation error: ${evalErr.message}`,
+        category: 'EVALUATION_ERROR',
+        reason: evalErr.message,
+      },
+      error: { code: evalErr.code || 'EVALUATION_ERROR', message: evalErr.message },
+    };
+  }
+
+  const prevFormatted = astToInfix(prevAST);
+  const nextFormatted = astToInfix(nextAST);
+
+  // 3. Repeated Expression Check (Zero progress)
+  if (prevFormatted === nextFormatted) {
+    return {
+      isValid: false,
+      isComplete: false,
+      status: 'NO_PROGRESS',
+      currentExpression: prevFormatted,
+      nextExpression: nextFormatted,
+      reductions: 0,
+      result: nextEval.result,
+      formattedResult: nextEval.formattedResult,
+      feedback: {
+        title: 'No Progress',
+        message: 'Identical expression repeated without performing an arithmetic operation.',
+        category: 'NO_PROGRESS',
+      },
+    };
+  }
+
+  // 4. Educational Step Skipping Guard
+  // If multiple operations remain in prevAST (stepCount > 1), jumping directly to a single Literal is forbidden in Step-by-Step Mode
+  if (!allowStepSkipping && prevEval.stepCount > 1 && nextAST.type === 'Literal') {
+    return {
+      isValid: false,
+      isComplete: false,
+      status: 'STEP_SKIPPED',
+      currentExpression: prevFormatted,
+      nextExpression: nextFormatted,
+      reductions: 0,
+      result: nextEval.result,
+      formattedResult: nextEval.formattedResult,
+      feedback: {
+        title: 'Step Skipped',
+        message: 'Directly submitting the final answer is not permitted in Step-by-Step Mode. Please perform one operation at a time.',
+        category: 'STEP_SKIPPED',
+        reason: `Previous expression requires ${prevEval.stepCount} reduction steps, but student submitted final literal directly.`,
+      },
+    };
+  }
+
+  // 5. Structural Subtree Reduction Verification
+  const match = matchSubtreeReduction(prevAST, nextAST, tolerance);
+
+  if (match.matches && match.reductions > 0) {
+    const isComplete = nextAST.type === 'Literal';
+    return {
+      isValid: true,
+      isComplete,
+      status: isComplete ? 'COMPLETED' : 'VALID',
+      currentExpression: prevFormatted,
+      nextExpression: nextFormatted,
+      reductions: match.reductions,
+      result: nextEval.result,
+      formattedResult: nextEval.formattedResult,
+      feedback: {
+        title: isComplete ? 'Problem Solved!' : 'Valid Step',
+        message: isComplete
+          ? `Final result ${nextEval.formattedResult} reached and verified!`
+          : `Valid step: ${match.reductions} subexpression(s) reduced.`,
+      },
+    };
+  }
+
+  // 6. Associative Grouping Fallback (for flat + and * chains)
+  if (allowAssociativeGrouping) {
+    const assocMatch = matchAssociativeReduction(prevAST, nextAST, tolerance);
+    if (assocMatch.matches && assocMatch.reductions > 0) {
+      const isComplete = nextAST.type === 'Literal';
+      return {
+        isValid: true,
+        isComplete,
+        status: isComplete ? 'COMPLETED' : 'VALID',
+        currentExpression: prevFormatted,
+        nextExpression: nextFormatted,
+        reductions: assocMatch.reductions,
+        result: nextEval.result,
+        formattedResult: nextEval.formattedResult,
+        feedback: {
+          title: isComplete ? 'Problem Solved!' : 'Valid Step',
+          message: `Valid associative reduction: ${assocMatch.reducedSubexpression} = ${assocMatch.subResult}.`,
+        },
+      };
+    }
+  }
+
+  // 7. Value Invariance Inspection (Distinguish UNVERIFIED from INVALID)
+  const valuePreserved = isNumericallyEquivalent(nextEval.result, prevEval.result, tolerance);
+
+  if (valuePreserved) {
+    return {
+      isValid: false,
+      isComplete: false,
+      status: 'UNVERIFIED',
+      currentExpression: prevFormatted,
+      nextExpression: nextFormatted,
+      reductions: 0,
+      result: nextEval.result,
+      formattedResult: nextEval.formattedResult,
+      feedback: {
+        title: 'Unverified Step',
+        message: 'This step preserves the overall mathematical value, but could not be verified as a single direct subexpression reduction.',
+        category: 'UNVERIFIED_TRANSFORMATION',
+        reason: match.reason || 'Structural reduction mismatch.',
+      },
+    };
+  }
+
+  // 8. Mathematically Invalid Step (Value changed or precedence violation)
+  let category = 'ARITHMETIC_ERROR';
+  let diagMessage = `Mathematically invalid step: evaluates to ${nextEval.formattedResult}, expected ${formatDisplayNumber(prevEval.result, maxDecimals)}.`;
+
+  // Check if precedence violation occurred (e.g. operator changed from + to *)
+  if (
+    prevAST.type === 'BinaryExpression' &&
+    nextAST.type === 'BinaryExpression' &&
+    prevAST.operator !== nextAST.operator
+  ) {
+    category = 'PRECEDENCE_ERROR';
+    diagMessage =
+      'Operator precedence violation: multiplication and division must be performed before addition and subtraction.';
+  }
+
+  return {
+    isValid: false,
+    isComplete: false,
+    status: 'INVALID',
+    currentExpression: prevFormatted,
+    nextExpression: nextFormatted,
+    reductions: 0,
+    result: nextEval.result,
+    formattedResult: nextEval.formattedResult,
+    feedback: {
+      title: 'Incorrect Step',
+      message: diagMessage,
+      category,
+      reason: match.reason || 'Mathematical value changed.',
+    },
+  };
+}
+
+/**
+ * Generate a non-spoiling, deterministic pedagogical hint for the current expression.
+ *
+ * Identifies the next subexpression to reduce according to standard PEMDAS / BODMAS
+ * precedence rules, guiding the student on what to compute next WITHOUT revealing
+ * the calculated answer.
+ *
+ * @param {object | string | Array} currentExpr - Expression input
+ * @param {object} [options] - Hint options
+ * @returns {object} StepHint
+ */
+export function generateStepHint(currentExpr, _options = {}) {
+  let ast;
+  try {
+    ast = resolveAST(currentExpr);
+  } catch (err) {
+    return {
+      targetSubexpression: null,
+      operator: null,
+      rule: 'SYNTAX_ERROR',
+      message: `Cannot generate hint: ${err.message}`,
+      isSpoiled: false,
+    };
+  }
+
+  if (ast.type === 'Literal') {
+    return {
+      targetSubexpression: null,
+      operator: null,
+      rule: 'ALREADY_SIMPLIFIED',
+      message: 'Expression is already an irreducible single number.',
+      isSpoiled: false,
+    };
+  }
+
+  // Find candidate reducible subtrees (BinaryExpression whose children are Literals)
+  function findDirectReductions(node, depth = 0) {
+    if (!node || node.type !== 'BinaryExpression') return [];
+    const candidates = [];
+    if (node.left.type === 'Literal' && node.right.type === 'Literal') {
+      candidates.push({ node, depth });
+    }
+    candidates.push(...findDirectReductions(node.left, depth + 1));
+    candidates.push(...findDirectReductions(node.right, depth + 1));
+    return candidates;
+  }
+
+  const candidates = findDirectReductions(ast);
+  if (candidates.length === 0) {
+    return {
+      targetSubexpression: null,
+      operator: null,
+      rule: 'GENERAL_ORDER',
+      message: 'Look for operations inside parentheses to simplify first.',
+      isSpoiled: false,
+    };
+  }
+
+  // Prioritize candidates:
+  // 1. High precedence operators (*, /)
+  // 2. Depth in tree
+  const highPrec = candidates.filter(
+    (c) => c.node.operator === '*' || c.node.operator === '/'
+  );
+  const pool = highPrec.length > 0 ? highPrec : candidates;
+
+  function formatSubexpr(n) {
+    const opDisplay = n.operator === '*' ? '×' : n.operator === '/' ? '÷' : n.operator;
+    return `${n.left.value} ${opDisplay} ${n.right.value}`;
+  }
+
+  if (pool.length > 1) {
+    const formattedList = pool.map((c) => `(${formatSubexpr(c.node)})`).join(' or ');
+    return {
+      targetSubexpression: formattedList,
+      operator: pool[0].node.operator,
+      rule: highPrec.length > 0 ? 'PRECEDENCE_HIGH' : 'MULTIPLE_CANDIDATES',
+      message: `You can simplify either ${formattedList} first.`,
+      isSpoiled: false,
+    };
+  }
+
+  const chosen = pool[0];
+  const formatted = formatSubexpr(chosen.node);
+  const isHigh = chosen.node.operator === '*' || chosen.node.operator === '/';
+
+  let rule = isHigh ? 'PRECEDENCE_HIGH' : 'LEFT_TO_RIGHT';
+  let message;
+
+  if (isHigh) {
+    const opName = chosen.node.operator === '*' ? 'Multiplication' : 'Division';
+    message = `${opName} takes precedence over addition and subtraction. Try calculating ${formatted} first.`;
+  } else {
+    message = `Try calculating ${formatted} next.`;
+  }
+
+  return {
+    targetSubexpression: formatted,
+    operator: chosen.node.operator,
+    rule,
+    message,
+    isSpoiled: false,
+  };
+}

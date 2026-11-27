@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { parseExpression, ParseError } from '../services/expressionParser.js';
 import { evaluateExpression, EvaluationError } from '../services/expressionEvaluator.js';
-import { verifyAnswer } from '../services/solutionVerifier.js';
+import { verifyAnswer, verifySingleStep, generateStepHint } from '../services/solutionVerifier.js';
 
 /**
  * Standard arithmetic operators and grouping delimiters supported by the workspace.
@@ -49,6 +49,18 @@ export const OPERATOR_BUTTONS = [
  * @param {Function} [props.onToggleSign] - () => void
  * @param {Function} [props.onAddDecimal] - () => void
  * @param {object} [props.initialPracticeResult] - Optional initial practice result for testing
+ * @param {'step' | 'direct'} [props.practiceSubMode] - Active Practice Sub-Mode ('step' | 'direct')
+ * @param {'step' | 'direct'} [props.initialPracticeSubMode] - Initial Practice Sub-Mode fallback
+ * @param {Function} [props.onPracticeSubModeChange] - (newSubMode) => void
+ * @param {Array<{ id: string, type: string, value: string, display: string }>} [props.stepTokens] - Step candidate tokens
+ * @param {Function} [props.onAppendStepToken] - (value, type) => void
+ * @param {Function} [props.onRemoveStepToken] - (index) => void
+ * @param {Function} [props.onBackspaceStep] - () => void
+ * @param {Function} [props.onClearStep] - () => void
+ * @param {Function} [props.onSetStepTokens] - (tokens) => void
+ * @param {Array<{ stepIndex: number, expression: string, reductionNote?: string }>} [props.stepHistory] - Verified step history
+ * @param {Function} [props.onCheckStep] - (stepExpressionString) => void
+ * @param {Array<object>} [props.initialStepCandidate] - Optional initial step candidate for testing
  */
 export default function ExpressionWorkspace({
   tokens = [],
@@ -69,12 +81,357 @@ export default function ExpressionWorkspace({
   onToggleSign,
   onAddDecimal,
   initialPracticeResult = null,
+  practiceSubMode: propPracticeSubMode,
+  initialPracticeSubMode,
+  onPracticeSubModeChange,
+  stepTokens: propStepTokens,
+  onAppendStepToken,
+  onRemoveStepToken,
+  onBackspaceStep,
+  onClearStep,
+  onSetStepTokens,
+  stepHistory: propStepHistory,
+  onSetStepHistory,
+  workingTokens: propWorkingTokens,
+  onSetWorkingTokens,
+  onStepVerified,
+  onStepRejected,
+  onStepComplete,
+  initialStepHistory = null,
+  initialStepFeedback = null,
+  onCheckStep,
+  initialStepCandidate = null,
 }) {
   const tokenCount = tokens.length;
 
   // Milestone 6.4 (Phase C): Solver vs. Practice Mode State Management
   const [internalMode, setInternalMode] = useState('solver');
   const activeMode = propMode !== undefined ? propMode : internalMode;
+
+  // Milestone 7.1 (Phase B): Practice Sub-Mode ('step' | 'direct')
+  // Default to 'direct' if propAnswerDigits is passed without propPracticeSubMode (backward compatibility for M6.4 tests),
+  // otherwise default to initialPracticeSubMode or 'step'.
+  const defaultSubMode =
+    propPracticeSubMode !== undefined
+      ? propPracticeSubMode
+      : propAnswerDigits !== undefined && initialPracticeSubMode === undefined
+      ? 'direct'
+      : initialPracticeSubMode || 'step';
+
+  const [internalPracticeSubMode, setInternalPracticeSubMode] = useState(defaultSubMode);
+  const activePracticeSubMode = propPracticeSubMode !== undefined ? propPracticeSubMode : internalPracticeSubMode;
+
+  const handlePracticeSubModeSwitch = useCallback((newSubMode) => {
+    if (newSubMode === activePracticeSubMode) return;
+    if (onPracticeSubModeChange) {
+      onPracticeSubModeChange(newSubMode);
+    } else {
+      setInternalPracticeSubMode(newSubMode);
+    }
+  }, [activePracticeSubMode, onPracticeSubModeChange]);
+
+  // Milestone 7.1 (Phase B): Step Candidate Ribbon State (Controlled or Uncontrolled fallback)
+  const [internalStepTokens, setInternalStepTokens] = useState(() => {
+    if (initialStepCandidate && Array.isArray(initialStepCandidate)) {
+      return initialStepCandidate;
+    }
+    return [];
+  });
+  const activeStepTokens = propStepTokens !== undefined ? propStepTokens : internalStepTokens;
+  const stepTokenCount = activeStepTokens.length;
+
+  // Milestone 7.1 (Phase C): Step History & Interactive Working State
+  const [internalStepHistory, setInternalStepHistory] = useState(() => {
+    if (initialStepHistory && Array.isArray(initialStepHistory)) {
+      return initialStepHistory;
+    }
+    return [];
+  });
+  const stepHistoryList = propStepHistory !== undefined ? propStepHistory : internalStepHistory;
+
+  const [internalWorkingTokens, setInternalWorkingTokens] = useState(() => tokens);
+  const activeWorkingTokens = propWorkingTokens !== undefined ? propWorkingTokens : internalWorkingTokens;
+  const workingExpressionString =
+    (activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens)
+      .map((t) => t.display || t.value)
+      .join(' ');
+
+  // Milestone 7.1 (Phase C): Step Verification Feedback, Anti-Spoiler Hints & Completion State
+  const [stepFeedback, setStepFeedback] = useState(initialStepFeedback || null);
+  const [activeHint, setActiveHint] = useState(null);
+  const [isCompleted, setIsCompleted] = useState(() => {
+    if (stepHistoryList.length > 0) {
+      const last = stepHistoryList[stepHistoryList.length - 1];
+      return last.status === 'COMPLETED';
+    }
+    return false;
+  });
+
+  const handleStepAppend = useCallback((value, type = 'digit') => {
+    if (!value) return;
+    const displayMap = { '*': '×', '/': '÷' };
+    const newToken = {
+      id: `step_tok_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      value: String(value),
+      display: displayMap[value] || String(value),
+    };
+    if (onAppendStepToken) {
+      onAppendStepToken(value, type);
+    } else if (onSetStepTokens) {
+      onSetStepTokens([...activeStepTokens, newToken]);
+    } else {
+      setInternalStepTokens((prev) => [...prev, newToken]);
+    }
+  }, [activeStepTokens, onAppendStepToken, onSetStepTokens]);
+
+  const handleStepRemove = useCallback((index) => {
+    if (onRemoveStepToken) {
+      onRemoveStepToken(index);
+    } else if (onSetStepTokens) {
+      onSetStepTokens(activeStepTokens.filter((_, i) => i !== index));
+    } else {
+      setInternalStepTokens((prev) => prev.filter((_, i) => i !== index));
+    }
+  }, [activeStepTokens, onRemoveStepToken, onSetStepTokens]);
+
+  const handleStepBackspace = useCallback(() => {
+    if (onBackspaceStep) {
+      onBackspaceStep();
+    } else if (onSetStepTokens) {
+      onSetStepTokens(activeStepTokens.slice(0, -1));
+    } else {
+      setInternalStepTokens((prev) => prev.slice(0, -1));
+    }
+  }, [activeStepTokens, onBackspaceStep, onSetStepTokens]);
+
+  const handleStepClear = useCallback(() => {
+    if (onClearStep) {
+      onClearStep();
+    } else if (onSetStepTokens) {
+      onSetStepTokens([]);
+    } else {
+      setInternalStepTokens([]);
+    }
+  }, [onClearStep, onSetStepTokens]);
+
+  // Milestone 7.1 (Phase B/C): Copy Current Working Expression to Step Ribbon
+  const handleCopyCurrent = useCallback(() => {
+    const sourceTokens = activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
+    const cloned = sourceTokens.map((t, idx) => ({
+      id: `step_tok_${Date.now()}_${idx}`,
+      type: t.type,
+      value: t.value,
+      display: t.display || t.value,
+    }));
+    if (onSetStepTokens) {
+      onSetStepTokens(cloned);
+    } else {
+      setInternalStepTokens(cloned);
+    }
+  }, [activeWorkingTokens, tokens, onSetStepTokens]);
+
+  const stepCandidateString = activeStepTokens.map((t) => t.display || t.value).join(' ');
+
+  const stepSyntaxStatus = useMemo(() => {
+    if (!activeStepTokens || activeStepTokens.length === 0) {
+      return {
+        status: 'EMPTY',
+        badge: '✏️ Empty Step',
+        className: 'status-empty',
+        message: 'Assemble your next simplified expression step below.',
+        isReady: false,
+        ast: null,
+      };
+    }
+
+    try {
+      const ast = parseExpression(activeStepTokens);
+      return {
+        status: 'READY',
+        badge: '✓ Step Ready',
+        className: 'status-ready',
+        message: 'Valid arithmetic expression. Ready to check your step.',
+        isReady: true,
+        ast,
+      };
+    } catch (err) {
+      if (err instanceof ParseError) {
+        const isIncomplete =
+          err.code === 'UNEXPECTED_EOF' ||
+          err.message.includes('expected operand after') ||
+          err.message.includes('expected an operand') ||
+          err.message.includes('Unmatched opening parenthesis');
+
+        return {
+          status: isIncomplete ? 'INCOMPLETE' : 'SYNTAX_ERROR',
+          badge: isIncomplete ? '⏳ Incomplete Step' : '⚠️ Step Syntax Error',
+          className: isIncomplete ? 'status-incomplete' : 'status-error',
+          message: err.message,
+          isReady: false,
+          ast: null,
+          error: err,
+        };
+      }
+
+      return {
+        status: 'SYNTAX_ERROR',
+        badge: '⚠️ Step Error',
+        className: 'status-error',
+        message: err.message || 'Syntax error in step',
+        isReady: false,
+        ast: null,
+        error: err,
+      };
+    }
+  }, [activeStepTokens]);
+
+  // Milestone 7.1 (Phase C): Core Interactive Step Verification Loop
+  const handleCheckStepAction = useCallback(() => {
+    if (!stepSyntaxStatus.isReady) return;
+    const prevExprTokens = activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
+    if (!prevExprTokens || prevExprTokens.length === 0) return;
+
+    const result = verifySingleStep(prevExprTokens, activeStepTokens);
+    setStepFeedback(result);
+
+    if (result.isValid) {
+      const newStepIndex = stepHistoryList.length + 1;
+      const reductionNote =
+        result.status === 'COMPLETED'
+          ? `Final result: ${result.formattedResult}`
+          : result.feedback?.message || `Reduced step ${newStepIndex}`;
+
+      const historyItem = {
+        stepIndex: newStepIndex,
+        previousExpression: prevExprTokens.map((t) => t.display || t.value).join(' '),
+        expression: activeStepTokens.map((t) => t.display || t.value).join(' '),
+        tokens: [...activeStepTokens],
+        reductionNote,
+        status: result.status,
+      };
+
+      const updatedHistory = [...stepHistoryList, historyItem];
+      if (onSetStepHistory) {
+        onSetStepHistory(updatedHistory);
+      } else {
+        setInternalStepHistory(updatedHistory);
+      }
+
+      if (onSetWorkingTokens) {
+        onSetWorkingTokens([...activeStepTokens]);
+      } else {
+        setInternalWorkingTokens([...activeStepTokens]);
+      }
+
+      if (onSetStepTokens) {
+        onSetStepTokens([]);
+      } else {
+        setInternalStepTokens([]);
+      }
+
+      setActiveHint(null);
+
+      if (result.status === 'COMPLETED' || result.isComplete) {
+        setIsCompleted(true);
+        if (onStepComplete) onStepComplete(result);
+      }
+
+      if (onStepVerified) onStepVerified(result);
+    } else {
+      if (onStepRejected) onStepRejected(result);
+    }
+
+    if (onCheckStep) onCheckStep(stepCandidateString, result);
+  }, [
+    stepSyntaxStatus.isReady,
+    activeWorkingTokens,
+    tokens,
+    activeStepTokens,
+    stepHistoryList,
+    onSetStepHistory,
+    onSetWorkingTokens,
+    onSetStepTokens,
+    onStepComplete,
+    onStepVerified,
+    onStepRejected,
+    onCheckStep,
+    stepCandidateString,
+  ]);
+
+  // Milestone 7.1 (Phase C): Undo Last Step Action
+  const handleUndoStep = useCallback(() => {
+    if (stepHistoryList.length === 0) return;
+
+    const updatedHistory = stepHistoryList.slice(0, -1);
+    if (onSetStepHistory) {
+      onSetStepHistory(updatedHistory);
+    } else {
+      setInternalStepHistory(updatedHistory);
+    }
+
+    if (updatedHistory.length === 0) {
+      if (onSetWorkingTokens) {
+        onSetWorkingTokens([...tokens]);
+      } else {
+        setInternalWorkingTokens([...tokens]);
+      }
+    } else {
+      const prevStep = updatedHistory[updatedHistory.length - 1];
+      if (onSetWorkingTokens) {
+        onSetWorkingTokens([...prevStep.tokens]);
+      } else {
+        setInternalWorkingTokens([...prevStep.tokens]);
+      }
+    }
+
+    setIsCompleted(false);
+    setStepFeedback({
+      isValid: true,
+      status: 'UNDO',
+      feedback: {
+        title: 'Step Undone',
+        message: 'Reverted to the previous working expression. Try another reduction!',
+      },
+    });
+    setActiveHint(null);
+  }, [stepHistoryList, onSetStepHistory, onSetWorkingTokens, tokens]);
+
+  // Milestone 7.1 (Phase C): Restart Step-by-Step Sequence Action
+  const handleRestartStepSequence = useCallback(() => {
+    if (onSetStepHistory) {
+      onSetStepHistory([]);
+    } else {
+      setInternalStepHistory([]);
+    }
+
+    if (onSetWorkingTokens) {
+      onSetWorkingTokens([...tokens]);
+    } else {
+      setInternalWorkingTokens([...tokens]);
+    }
+
+    if (onSetStepTokens) {
+      onSetStepTokens([]);
+    } else {
+      setInternalStepTokens([]);
+    }
+
+    setIsCompleted(false);
+    setStepFeedback(null);
+    setActiveHint(null);
+  }, [onSetStepHistory, onSetWorkingTokens, tokens, onSetStepTokens]);
+
+  // Milestone 7.1 (Phase C): Anti-Spoiler Hint Toggle
+  const handleToggleHint = useCallback(() => {
+    if (activeHint) {
+      setActiveHint(null);
+      return;
+    }
+    const currentExpr = activeWorkingTokens && activeWorkingTokens.length > 0 ? activeWorkingTokens : tokens;
+    const hint = generateStepHint(currentExpr);
+    setActiveHint(hint);
+  }, [activeHint, activeWorkingTokens, tokens]);
 
   // Milestone 6.4 (Phase C): Candidate Answer Buffer State (Controlled or Uncontrolled fallback)
   const [internalAnswerDigits, setInternalAnswerDigits] = useState([]);
@@ -176,6 +533,12 @@ export default function ExpressionWorkspace({
     setEvaluationError(null);
     setPracticeResult(null);
     setShowSolutionInPractice(false);
+    setInternalStepTokens([]);
+    setInternalWorkingTokens(tokens);
+    setInternalStepHistory([]);
+    setStepFeedback(null);
+    setActiveHint(null);
+    setIsCompleted(false);
   }
 
   // Milestone 6.4 (Phase C): Safe Mode Switching
@@ -185,6 +548,8 @@ export default function ExpressionWorkspace({
     setEvaluationError(null);
     setPracticeResult(null);
     setShowSolutionInPractice(false);
+    setStepFeedback(null);
+    setActiveHint(null);
 
     if (onClearAnswer) onClearAnswer();
     setInternalAnswerDigits([]);
@@ -451,18 +816,421 @@ export default function ExpressionWorkspace({
       )}
 
       {/* =========================================================================
-          PRACTICE MODE: Candidate Answer Capture Buffer & Verifier Controls
+          PRACTICE MODE: Step-by-Step Learning & Direct Answer Modes
           ========================================================================= */}
       {activeMode === 'practice' && (
-        <div className="practice-workspace-section" aria-label="Practice Mode Answer Capture" id="practice-workspace-section">
-          <div className="practice-section-header">
-            <span className="practice-section-badge">Student Practice Buffer</span>
-            <span className="practice-hint">
-              Air-write your answer digits above or use controls below, then check your work.
-            </span>
+        <div className="practice-workspace-section" aria-label="Practice Mode Workspace" id="practice-workspace-section">
+          {/* Milestone 7.1 (Phase B): Practice Sub-Mode Navigation */}
+          <div className="practice-submode-toolbar" aria-label="Practice Sub-Mode Navigation">
+            <div className="practice-submode-selector" role="tablist" aria-label="Practice Mode Selection">
+              <button
+                type="button"
+                className={`submode-tab-btn ${activePracticeSubMode === 'step' ? 'active' : ''}`}
+                onClick={() => handlePracticeSubModeSwitch('step')}
+                role="tab"
+                aria-selected={activePracticeSubMode === 'step'}
+                id="tab-submode-step"
+              >
+                👣 Step-by-Step
+              </button>
+              <button
+                type="button"
+                className={`submode-tab-btn ${activePracticeSubMode === 'direct' ? 'active' : ''}`}
+                onClick={() => handlePracticeSubModeSwitch('direct')}
+                role="tab"
+                aria-selected={activePracticeSubMode === 'direct'}
+                id="tab-submode-direct"
+              >
+                🎯 Direct Answer
+              </button>
+            </div>
           </div>
 
-          <div className="practice-answer-card">
+          {/* =========================================================================
+              MILESTONE 7.1 (PHASE B): Step-by-Step Learning Mode UI Skeleton
+              ========================================================================= */}
+          {activePracticeSubMode === 'step' && (
+            <div className="step-practice-section" id="step-practice-section" aria-label="Step-by-Step Practice Workspace">
+              <div className="step-section-header">
+                <span className="step-section-badge">Step-by-Step Learning</span>
+                <span className="step-section-hint">
+                  Simplify the expression one operation at a time. Copy current expression or assemble your next step.
+                </span>
+              </div>
+
+              {/* 1. Reference Problem & Current Working Expression Panels */}
+              <div className="step-expressions-panel">
+                <div className="step-reference-card" id="step-reference-card">
+                  <span className="step-panel-label">Initial Problem:</span>
+                  <code className="step-reference-expr" id="step-reference-expr">
+                    {assembledExpressionString || 'No expression loaded'}
+                  </code>
+                </div>
+
+                <div className="step-current-working-card" id="step-current-working-card">
+                  <div className="working-card-header">
+                    <span className="step-panel-label">Current Expression to Simplify:</span>
+                    <div className="working-card-actions">
+                      {stepHistoryList.length > 0 && !isCompleted && (
+                        <button
+                          type="button"
+                          className="btn-undo-step"
+                          id="btn-undo-step"
+                          onClick={handleUndoStep}
+                          title="Undo the last accepted step and revert current expression"
+                        >
+                          ↩ Undo Step
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn-copy-current"
+                        id="btn-copy-current-step"
+                        onClick={handleCopyCurrent}
+                        disabled={tokenCount === 0 || isCompleted}
+                        title="Copy current expression into step ribbon for easy editing"
+                      >
+                        📋 Copy Current
+                      </button>
+                    </div>
+                  </div>
+                  <code className="step-working-expr" id="step-working-expr">
+                    {workingExpressionString || 'No expression loaded'}
+                  </code>
+                </div>
+              </div>
+
+              {/* 2. Step History Timeline */}
+              <div className="step-history-timeline-container" aria-label="Step Progression Timeline">
+                <div className="step-timeline-header">
+                  <span className="step-timeline-title">Solution Timeline:</span>
+                  <div className="step-timeline-header-right">
+                    <span className="step-timeline-count">
+                      {stepHistoryList.length === 0 ? 'Starting Step 1' : `Completed ${stepHistoryList.length} step(s)`}
+                    </span>
+                    {stepHistoryList.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn-step-restart"
+                        id="btn-step-restart"
+                        onClick={handleRestartStepSequence}
+                        title="Restart step-by-step simplification from the beginning"
+                      >
+                        ↺ Restart
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="step-history-timeline" id="step-history-timeline">
+                  <div className="timeline-node timeline-node-start">
+                    <span className="node-badge">Start</span>
+                    <code className="node-expr">{assembledExpressionString || '...'}</code>
+                  </div>
+                  {stepHistoryList.map((step, idx) => (
+                    <div key={`hist_${idx}`} className="timeline-node timeline-node-step">
+                      <span className="timeline-arrow">➔</span>
+                      <span className="node-badge">{`Step ${step.stepIndex || idx + 1}`}</span>
+                      <code className="node-expr">{step.expression}</code>
+                      {step.reductionNote && <span className="node-note">{step.reductionNote}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Milestone 7.1 (Phase C): Step Verification Feedback Banner */}
+              {stepFeedback && (
+                <div className="step-feedback-container" id="step-feedback-container" aria-live="polite">
+                  <div
+                    className={`step-feedback-card ${
+                      stepFeedback.isValid
+                        ? stepFeedback.status === 'COMPLETED'
+                          ? 'feedback-completed'
+                          : 'feedback-valid'
+                        : 'feedback-invalid'
+                    }`}
+                    id={
+                      stepFeedback.isValid
+                        ? stepFeedback.status === 'COMPLETED'
+                          ? 'step-feedback-completed'
+                          : 'step-feedback-valid'
+                        : 'step-feedback-invalid'
+                    }
+                  >
+                    <div className="step-feedback-header">
+                      <span className="feedback-icon">
+                        {stepFeedback.isValid ? (stepFeedback.status === 'COMPLETED' ? '🎉' : '✓') : '⚠️'}
+                      </span>
+                      <div className="feedback-body">
+                        <div className="feedback-title-row">
+                          <h4 className="feedback-title" id="step-feedback-title">
+                            {stepFeedback.feedback?.title || (stepFeedback.isValid ? 'Valid Step!' : 'Step Error')}
+                          </h4>
+                          {stepFeedback.feedback?.category && (
+                            <span className="diagnostic-category-badge" id="step-feedback-category">
+                              {stepFeedback.feedback.category.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="feedback-msg" id="step-feedback-message">
+                          {stepFeedback.feedback?.message}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-dismiss-feedback"
+                        id="btn-dismiss-step-feedback"
+                        onClick={() => setStepFeedback(null)}
+                        title="Dismiss feedback"
+                        aria-label="Dismiss feedback banner"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Milestone 7.1 (Phase C): Anti-Spoiler Pedagogical Hint Card */}
+              {activeHint && (
+                <div className="step-hint-card" id="step-hint-card" role="region" aria-label="Step Hint">
+                  <div className="hint-card-header">
+                    <div className="hint-header-title">
+                      <span className="hint-icon">💡</span>
+                      <h4 className="hint-title">Step Hint</h4>
+                      <span className="anti-spoiler-pill" title="This hint guides your calculation order without spoiling answers">
+                        🛡️ Anti-Spoiler
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-dismiss-hint"
+                      id="btn-dismiss-hint"
+                      onClick={() => setActiveHint(null)}
+                      title="Close hint"
+                      aria-label="Close hint"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="hint-card-body">
+                    <p className="hint-message" id="step-hint-message">{activeHint.message}</p>
+                    {activeHint.targetSubexpression && (
+                      <div className="hint-target-row">
+                        <span className="hint-target-label">Focus operation:</span>
+                        <code className="hint-target-expr" id="step-hint-target">{activeHint.targetSubexpression}</code>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Milestone 7.1 (Phase C): Step Completion Celebration Card */}
+              {isCompleted ? (
+                <div className="step-completion-card" id="step-completion-card" role="region" aria-label="Step Problem Completed">
+                  <div className="completion-card-header">
+                    <span className="completion-trophy">🏆</span>
+                    <div className="completion-card-titles">
+                      <h3 className="completion-title">Problem Solved!</h3>
+                      <p className="completion-subtitle">
+                        All operations reduced successfully across {stepHistoryList.length} verified step(s).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="completion-result-row">
+                    <span className="completion-label">Final Value:</span>
+                    <code className="completion-value" id="step-final-value">
+                      {stepHistoryList[stepHistoryList.length - 1]?.expression || workingExpressionString}
+                    </code>
+                  </div>
+                  <div className="completion-actions-row">
+                    <button
+                      type="button"
+                      className="btn-step-undo-final"
+                      id="btn-step-undo-final"
+                      onClick={handleUndoStep}
+                      title="Step back to try another path"
+                    >
+                      ↩ Undo Last Step
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-step-restart"
+                      id="btn-step-restart-final"
+                      onClick={handleRestartStepSequence}
+                      title="Restart from the beginning"
+                    >
+                      ↺ Solve Again
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* 3. Step Expression Assembly Ribbon Card */
+                <div className="step-assembly-card" id="step-assembly-card">
+                  <div className="step-assembly-header">
+                    <div className="step-header-title-group">
+                      <span className="step-assembly-label">Your Next Step:</span>
+                      <span className="step-token-count-pill" title="Tokens in step expression">
+                        {`${stepTokenCount} ${stepTokenCount === 1 ? 'symbol' : 'symbols'}`}
+                      </span>
+                      <span className={`syntax-status-badge ${stepSyntaxStatus.className}`} id="step-syntax-badge">
+                        {stepSyntaxStatus.badge}
+                      </span>
+                    </div>
+                    <div className="step-assembly-actions">
+                      <button
+                        type="button"
+                        className="btn-workspace-action btn-backspace"
+                        onClick={handleStepBackspace}
+                        disabled={stepTokenCount === 0}
+                        title="Remove the last token in your step"
+                        id="btn-step-backspace"
+                      >
+                        ⌫ Backspace
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-workspace-action btn-clear-expr"
+                        onClick={handleStepClear}
+                        disabled={stepTokenCount === 0}
+                        title="Clear your step expression"
+                        id="btn-step-clear"
+                      >
+                        Clear Step
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Step Ribbon Container */}
+                  <div className="step-ribbon-container">
+                    <div className="expression-ribbon step-ribbon" role="region" aria-label="Step Expression Ribbon" id="step-ribbon">
+                      {stepTokenCount === 0 ? (
+                        <span className="ribbon-placeholder" id="step-ribbon-placeholder">
+                          Click "Copy Current" above or use operators / digits below to assemble your next step...
+                        </span>
+                      ) : (
+                        activeStepTokens.map((token, index) => {
+                          const isOperator = token.type === 'operator';
+                          const isParen = token.type === 'paren';
+
+                          let chipClass = 'token-chip-digit';
+                          if (isOperator) chipClass = 'token-chip-operator';
+                          if (isParen) chipClass = 'token-chip-paren';
+
+                          return (
+                            <div
+                              key={token.id || `step_tok_${token.value}_${index}`}
+                              className={`token-chip ${chipClass}`}
+                              title={`Step Token: ${token.display || token.value} (click × to remove)`}
+                            >
+                              <span className="token-chip-val">{token.display || token.value}</span>
+                              <button
+                                type="button"
+                                className="token-chip-delete"
+                                onClick={() => handleStepRemove(index)}
+                                aria-label={`Remove ${token.display || token.value}`}
+                                title="Remove this token"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Step Operator Strip (+, -, ×, ÷, (, )) */}
+                  <div className="step-operator-strip-row" aria-label="Step Arithmetic Operators">
+                    <span className="operator-strip-label">Operators:</span>
+                    <div className="operator-buttons-group">
+                      {OPERATOR_BUTTONS.map((op) => (
+                        <button
+                          key={`step_op_${op.label}`}
+                          type="button"
+                          className={`btn-operator-chip ${op.type === 'paren' ? 'btn-paren' : ''}`}
+                          onClick={() => handleStepAppend(op.value, op.type)}
+                          title={`Step ${op.title}`}
+                          id={`btn-step-op-${op.value === '*' ? 'mul' : op.value === '/' ? 'div' : op.value === '(' ? 'lparen' : op.value === ')' ? 'rparen' : op.value === '+' ? 'plus' : 'minus'}`}
+                        >
+                          {op.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Step Digit Keypad (0–9) */}
+                  <div className="step-digit-pad-row" aria-label="Step Digit Keypad">
+                    <span className="digit-pad-label">Digits:</span>
+                    <div className="answer-digit-pad step-digit-pad">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((num) => (
+                        <button
+                          key={`step_num_${num}`}
+                          type="button"
+                          className="btn-ans-digit"
+                          onClick={() => handleStepAppend(String(num), 'digit')}
+                          title={`Input ${num}`}
+                          id={`btn-step-digit-${num}`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Step Live Syntax Readiness & Submission Controls Bar */}
+                  <div className="step-submission-bar" id="step-submission-bar" aria-label="Step Readiness and Submission Controls">
+                    <div className="syntax-status-indicator">
+                      <span className="syntax-status-message" id="step-syntax-message">
+                        {stepSyntaxStatus.message}
+                      </span>
+                    </div>
+
+                    <div className="step-submission-actions">
+                      <button
+                        type="button"
+                        className={`btn-step-hint ${activeHint ? 'active' : ''}`}
+                        id="btn-step-hint"
+                        onClick={handleToggleHint}
+                        title={tokenCount === 0 ? 'Load a problem first' : 'Request an anti-spoiler hint for the next operation'}
+                        disabled={tokenCount === 0}
+                      >
+                        {`💡 ${activeHint ? 'Hide Hint' : 'Hint'}`}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-check-step"
+                        onClick={handleCheckStepAction}
+                        disabled={!stepSyntaxStatus.isReady}
+                        title={
+                          !stepSyntaxStatus.isReady
+                            ? 'Complete a valid step expression before checking'
+                            : 'Check this simplification step'
+                        }
+                        id="btn-check-step"
+                      >
+                        <span className="btn-step-icon">👣</span>
+                        <span>Check Step</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =========================================================================
+              DIRECT ANSWER MODE: Candidate Answer Buffer & Verifier Controls (M6.4)
+              ========================================================================= */}
+          {activePracticeSubMode === 'direct' && (
+            <>
+              <div className="practice-section-header">
+                <span className="practice-section-badge">Student Practice Buffer</span>
+                <span className="practice-hint">
+                  Air-write your answer digits above or use controls below, then check your work.
+                </span>
+              </div>
+
+              <div className="practice-answer-card">
             {/* Display Area for Candidate Answer */}
             <div className="candidate-answer-row">
               <span className="candidate-answer-label">My Answer:</span>
@@ -659,8 +1427,10 @@ export default function ExpressionWorkspace({
               </div>
             </div>
           )}
-        </div>
+        </>
       )}
+    </div>
+  )}
 
       {/* =========================================================================
           SOLVER MODE: Reduction Step Drawer & Solution View

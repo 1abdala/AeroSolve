@@ -365,6 +365,37 @@ export default function CameraPreview() {
     });
   }, []);
 
+  // Milestone 7.1 (Phase B): Step-by-Step Learning State & Handlers
+  const [practiceSubMode, setPracticeSubMode] = useState('step');
+  const [stepTokens, setStepTokens] = useState([]);
+
+  const handleAppendStepToken = useCallback((value, type = 'digit') => {
+    if (!value) return;
+    const displayMap = { '*': '×', '/': '÷' };
+    const newToken = {
+      id: `step_tok_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      value: String(value),
+      display: displayMap[value] || String(value),
+    };
+    setStepTokens((prev) => [...prev, newToken]);
+    if (type === 'digit') {
+      clearWriting();
+    }
+  }, [clearWriting]);
+
+  const handleRemoveStepToken = useCallback((index) => {
+    setStepTokens((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleBackspaceStep = useCallback(() => {
+    setStepTokens((prev) => prev.slice(0, -1));
+  }, []);
+
+  const handleClearStep = useCallback(() => {
+    setStepTokens([]);
+  }, []);
+
   // Milestone 5: Corpus statistics per digit (differentiating genuine webcam samples from seeds and session counts)
   const corpusStats = useMemo(() => {
     const counts = {};
@@ -1465,6 +1496,17 @@ export default function CameraPreview() {
                     <span className="btn-append-icon">➕</span>
                     <span>Add <strong>"{recognitionResult.topPrediction}"</strong> to Expression</span>
                   </button>
+                ) : practiceSubMode === 'step' ? (
+                  <button
+                    type="button"
+                    className="btn-append-to-expression btn-append-to-step"
+                    onClick={() => handleAppendStepToken(recognitionResult.topPrediction, 'digit')}
+                    title={`Append "${recognitionResult.topPrediction}" to step expression and clear canvas`}
+                    id="btn-append-recognized-step-digit"
+                  >
+                    <span className="btn-append-icon">👣</span>
+                    <span>Add <strong>"{recognitionResult.topPrediction}"</strong> to Step</span>
+                  </button>
                 ) : (
                   <button
                     type="button"
@@ -1480,6 +1522,8 @@ export default function CameraPreview() {
                 <span className="commit-hint">
                   {workspaceMode === 'solver'
                     ? 'Appends digit to expression ribbon and resets canvas for next symbol'
+                    : practiceSubMode === 'step'
+                    ? 'Appends digit to step expression and resets canvas for next symbol'
                     : 'Appends digit to practice candidate answer buffer and resets canvas'}
                 </span>
               </div>
@@ -1555,7 +1599,7 @@ export default function CameraPreview() {
           </div>
         )}
 
-        {/* Milestone 6.4 (Phases A, B, & C): Mathematical Workspace */}
+        {/* Milestone 6.4 & 7.1: Mathematical Workspace */}
         <ExpressionWorkspace
           tokens={expressionTokens}
           onAppendToken={handleAppendToken}
@@ -1564,6 +1608,14 @@ export default function CameraPreview() {
           onClearAll={handleClearExpression}
           mode={workspaceMode}
           onModeChange={setWorkspaceMode}
+          practiceSubMode={practiceSubMode}
+          onPracticeSubModeChange={setPracticeSubMode}
+          stepTokens={stepTokens}
+          onAppendStepToken={handleAppendStepToken}
+          onRemoveStepToken={handleRemoveStepToken}
+          onBackspaceStep={handleBackspaceStep}
+          onClearStep={handleClearStep}
+          onSetStepTokens={setStepTokens}
           answerDigits={answerDigits}
           answerSign={answerSign}
           onAppendAnswerDigit={handleAppendAnswerDigit}
